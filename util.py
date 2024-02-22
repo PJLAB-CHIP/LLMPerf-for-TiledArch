@@ -15,7 +15,7 @@ def save_file(data, file_path):
     # 将DataFrame保存到Excel中，index参数用于指定是否包含行索引
     df.to_excel(file_path, index=False)
 def MBytes(list0,bytes=2):
-    "List 维度乘积"
+    #List 维度乘积
     res=1 
     for i in list0:
         res*=i
