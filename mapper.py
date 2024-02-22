@@ -2,7 +2,7 @@ import transformer_block as tbk
 import arch_execution as arch
 from util import*
 import math
-
+from copy import deepcopy
   
 def gemm_auto_opt_mapper(op,arch,local_last=True,local_next=True,input_stationary=True,elt_op=None):
     #elt_op 表示gemm算子后续紧跟着一个逐点非线性算子
@@ -113,7 +113,7 @@ def flashatten_mapper(model,arch,local_last=False,local_next=False):
     result={"latency":best_latency*dims[3],'utilization':max_utilization,'cp_latency':total_cp_latency}
     return result
 
-def manual_mapper(model,arch):
+def manual_mapper(model,arch,qkv_fusion=False):
     #指定映射
     ops=model.ops
     mapping_result={}
@@ -121,16 +121,36 @@ def manual_mapper(model,arch):
     mapping_result['RMSNorm']=vector_mapper(ops['RMSNorm'],'RMSNorm',arch,split_num=1,local_last=False,local_next=True)
     
     #TODO qkv
-    mapping_result['Q_proj']=gemm_auto_opt_mapper(ops['Q_proj'],arch,local_last=True,local_next=False)
-    mapping_result['K_proj']=gemm_auto_opt_mapper(ops['K_proj'],arch,local_last=True,local_next=False)
-    mapping_result['V_proj']=gemm_auto_opt_mapper(ops['V_proj'],arch,local_last=True,local_next=False)
+    if qkv_fusion:
+        ishape=[model.config["B"], model.config["S"], model.config["H"]]
+        wshape = [model.config["H"], model.config["H"]]
+        oshape = [ishape[0], ishape[1], wshape[1]]
+        Proj_compute = 2*ishape[0]*ishape[1]*wshape[0]*wshape[1]/1024 * 1024 * 1024
+        ops["QKV_proj"] = {"type": "GEMM", "ishape":ishape, "wshape": wshape, "oshape":oshape, "compute":Proj_compute}
+        mapping_result['QKV_proj']=gemm_auto_opt_mapper(ops['QKV_proj'],arch,local_last=True,local_next=False)
+        del ops['Q_proj']
+        del ops['K_proj']
+        del ops['V_proj']
+    else:
+        mapping_result['Q_proj']=gemm_auto_opt_mapper(ops['Q_proj'],arch,local_last=True,local_next=False)
+        mapping_result['K_proj']=gemm_auto_opt_mapper(ops['K_proj'],arch,local_last=True,local_next=False)
+        mapping_result['V_proj']=gemm_auto_opt_mapper(ops['V_proj'],arch,local_last=True,local_next=False)
     #2
     mapping_result['Flashatten']=flashatten_mapper(model,arch,local_last=False,local_next=False)
+    del ops['RoPE(Q)']
+    del ops['RoPE(K)']
+    del ops['QK^T']
+    del ops['Softmax']
+    del ops['AV']
+
+
     mapping_result['Linear']=gemm_auto_opt_mapper(ops['Linear'],arch,local_last=True,local_next=False)
     mapping_result['RMSNorm2']=vector_mapper(ops['RMSNorm2'],'RMSNorm',arch,split_num=1,local_last=False,local_next=True)
     mapping_result['ResAdd']=vector_mapper(ops['ResAdd'],'ResAdd',arch,local_last=True,local_next=False)
     #3
     mapping_result['FFN_up&SiLU']=gemm_auto_opt_mapper(ops['FFN_up'],arch,local_last=True,local_next=False,elt_op=ops['SiLU'])
+    del ops['SiLU']
+
     mapping_result['FFN_gate']=gemm_auto_opt_mapper(ops['Q_proj'],arch,local_last=True,local_next=False)
     mapping_result['hadamard']=vector_mapper(ops['hadamard'],'hadamard',arch,split_num=1,local_last=False,local_next=True)
     mapping_result['FFN2']=gemm_auto_opt_mapper(ops['FFN2'],arch,local_last=True,local_next=False)
