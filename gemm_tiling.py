@@ -168,7 +168,7 @@ def gemm_tiling_weight_stationary(B, M, K, N, tile_m, tile_n, print_details=True
     """
     M = M * B
     tile_m, tile_n = tile_n, tile_m
-    M, N = N, M
+    M, K, N = N, K, M
     B = 1
     return gemm_tiling_input_stationary(B, M, K, N, tile_m, tile_n, print_details)
 
