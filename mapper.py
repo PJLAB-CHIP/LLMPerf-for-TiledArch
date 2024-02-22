@@ -133,8 +133,8 @@ def manual_mapper(model,arch,qkv_fusion=False):
         del ops['V_proj']
     else:
         mapping_result['Q_proj']=gemm_auto_opt_mapper(ops['Q_proj'],arch,local_last=True,local_next=False)
-        mapping_result['K_proj']=gemm_auto_opt_mapper(ops['K_proj'],arch,local_last=True,local_next=False)
-        mapping_result['V_proj']=gemm_auto_opt_mapper(ops['V_proj'],arch,local_last=True,local_next=False)
+        mapping_result['K_proj']=gemm_auto_opt_mapper(ops['K_proj'],arch,local_last=False,local_next=False)
+        mapping_result['V_proj']=gemm_auto_opt_mapper(ops['V_proj'],arch,local_last=False,local_next=False)
     #2
     mapping_result['Flashatten']=flashatten_mapper(model,arch,local_last=False,local_next=False)
     del ops['RoPE(Q)']
