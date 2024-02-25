@@ -51,6 +51,14 @@ class Llama_block():
             res = ops
             data.append(res)
         save_file(data, data_path)
+    def gen_gemm(self,name,dims):
+        assert len(dims)==4
+        unit = 1024 * 1024 * 1024
+        ishape=[dims[0],dims[1],dims[2]]
+        wshape = [dims[2],dims[3]]
+        oshape = [dims[0],dims[1],dims[3]]
+        Proj_compute = 2*ishape[0]*ishape[1]*wshape[0]*wshape[1]/unit
+        return {"name":name,"type": "GEMM", "ishape":ishape, "wshape": wshape, "oshape":oshape, "compute":Proj_compute}
     def construct_model(self):
 
         # GFLOPS unit

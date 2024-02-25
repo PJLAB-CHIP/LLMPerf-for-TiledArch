@@ -32,13 +32,16 @@ def dim_analysis(optype,dims,para_dims):
         o_shape=[math.ceil(new_shape[0]),math.ceil(new_shape[1]),math.ceil(new_shape[3])]
         return new_shape,i_shape,o_shape,w_shape,reduce
 
-def dim_split(dim,split:Union[None,int]=None):
+def block_range(dim,min_block=1):
     alter_groups=[]
-    if split!=None:
-        alter_groups.append((split))
-    else:
-        max_split=math.ceil(math.log2(dim)+1)
-        for i in range(max_split):
+    exp=math.ceil(math.log2(dim)+1)
+    if min_block<dim:
+        for i in range(exp):
             temp=2**i
             alter_groups.append(temp)
-    return alter_groups #划分的数量
+        return alter_groups #划分的数量
+    else:
+        return [min_block] #划分的数量
+
+if __name__ == "__main__":
+    print(block_range(1024,min_block=16))
