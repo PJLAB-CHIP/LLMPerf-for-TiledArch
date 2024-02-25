@@ -6,10 +6,8 @@ import math
 # i_params = [i_size, i_flag] i_size为一份输入的大小，单位为MB；i_flag为输入的总份数，例如16/32/64等
 # o_params = [o_size, o_flag] o_size为一份输出的大小，单位为MB；o_flag为输出的总份数，例如16/32/64等
 # w_params = [w_size, w_flag] w_size为一份输出的大小，单位为MB；w_flag为权重的总份数；w_cm_flag为一轮内通信的次数，例如15次，则计算和存储是16次
-# cp_size为计算量，单位为GFLOPs
-# cp_type为计算类型, 这里认为0为Vector，1为Gemm
+# cp=[[cp_size,cp_type],...]为计算量，单位为GFLOPs, cp_type为计算类型, 这里认为0为Vector，1为Gemm
 # cm_size为通信量大小，单位MB,cm_type 0,cm_hops为通信的最大跳数 
-
 def gemm_auto_opt_mapper(op,arch,input_stationary=True,Nm_Nn=None,fusion_op1=None,fusion_op2=None):
     '''
     gemm算子映射切分策略搜索,默认input_stationary
@@ -98,7 +96,7 @@ def vector_mapper(op,arch):
     assert op['ishape']==op['oshape']
     io_shape,w_shape=op['ishape'],op['wshape']
     assert (op['name'] in ['RMSNorm','RMSNorm2','Hadamard','ResAdd','ResAdd2']) and (op['type']=='Vector')
-    i_split=op['ishape'][1]
+    i_split=op['ishape'][1]#RMS只能切一个维度
     if op['name'] in ['Hadamard','ResAdd','ResAdd2']:
         i_split=i_split*op['ishape'][2]
     splits=block_range(i_split,min_block=1)
@@ -106,15 +104,12 @@ def vector_mapper(op,arch):
     max_utilization=0
     best_split=[]
     best_latency=[]
-    #print(splits)
     for split in splits:
-            #Resadd 输入和权重shape一样，因此可以不区分stationary
             i_params=[MBytes(io_shape)/split,split]
             o_params=[MBytes(io_shape)/split]
             w_params=[MBytes(w_shape)/split,1]#逐点运算输出切分数等于输入切分数，默认输出切分数=输入切分数*权重切分数
             cp=[[op['compute']/split,0]]
             cm_size,cm_type,cm_hops=0,0,0
-            #print(i_params, o_params, w_params, cp,cm_size, cm_type,cm_hops)
             sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute(i_params, o_params, w_params, cp,cm_size, cm_type,cm_hops)
             if tot_utilization>max_utilization and sram_cap_req:
                 max_utilization=tot_utilization
