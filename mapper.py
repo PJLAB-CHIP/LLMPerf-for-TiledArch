@@ -80,11 +80,11 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=False):
             current_tx_ty=[tx,ty]
             Q_RoPE_wsize=model.config['Q']//8*tx*model.config['H']//model.config['A']/MB
             K_RoPE_wsize=model.config['Q']//8*ty*model.config['H']//model.config['A']/MB
-            i_params=[MBytes([dims[0],tx,dims[2]])+Q_RoPE_wsize,dims[3]*math.ceil(dims[1]//tx)]# 将多头也进行overlao，隐藏Q的输入时间
-            o_params=[MBytes([dims[0],tx,ty])]
+            i_params=[MBytes([dims[0],tx,dims[2]])+Q_RoPE_wsize,dims[3]*math.ceil(dims[1]//tx)]# 将多头也进行overlap，隐藏Q的输入时间
+            o_params=[MBytes([dims[0],tx,ty]),dims[3]*math.ceil(dims[1]//tx)]
             w_params=[2*MBytes([dims[0],ty,dims[2]])+K_RoPE_wsize,math.ceil(dims[1]//ty)]#K+V
-            vector_cp_size= model.config['B']*tx*model.config['H']//model.config['A']+ model.config['B']*ty*model.config['H']//model.config['A']#RoPE
-            flash_vector_cp_size= 5*tx*ty*dims[2]
+            vector_cp_size=model.config['B']*tx*model.config['H']//model.config['A']+ model.config['B']*ty*model.config['H']//model.config['A']#RoPE
+            flash_vector_cp_size=1*tx*ty*dims[2]
             cp=[[vector_cp_size/GB,0],[2*2*tx*ty*dims[2]/GB,1],[flash_vector_cp_size/GB,0]]
             cm_size,cm_type,cm_hops=w_params[0],0,1
             #print(i_params, o_params, w_params, cp,  cm_size, cm_type,cm_hops)
@@ -116,7 +116,7 @@ def vector_mapper(op,arch,splits=None,details=False):
     best_latency=[]
     for split in splits:
             i_params=[MBytes(io_shape)/split,split]
-            o_params=[MBytes(io_shape)/split]
+            o_params=[MBytes(io_shape)/split,split]
             w_params=[MBytes(w_shape)/split,1]#逐点运算输出切分数等于输入切分数，默认输出切分数=输入切分数*权重切分数
             cp=[[op['compute']/split,0]]
             #print(cp,split)
@@ -150,7 +150,7 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
         del ops['V_proj']
         del ops['RMSNorm']
     else:
-        Nm_Nn=[16,128] if preset else None
+        Nm_Nn=[32,128] if preset else None
         mapping_result['RMSNorm&Q_proj']=gemm_auto_opt_mapper(ops['Q_proj'],arch,Nm_Nn=Nm_Nn,fusion_op1=ops['RMSNorm'],details=details)
         mapping_result['K_proj']=gemm_auto_opt_mapper(ops['K_proj'],arch,Nm_Nn=Nm_Nn,details=details)
         mapping_result['V_proj']=gemm_auto_opt_mapper(ops['V_proj'],arch,Nm_Nn=Nm_Nn,details=details)
