@@ -119,7 +119,7 @@ class Tx8:
             total_DRAM = total_dram_read + total_dram_store#总DRAM访存时间
             #print(n,dram_store_per,dram_store_cycle,total_dram_store)
             #print(cp_latency_cycle,cm_latency_cycle,dram_read_cycle,dram_store_cycle)
-            print(total_dram_read,dram_store_per,cp_latency_per)
+            #print(total_dram_read,dram_store_per,cp_latency_per)
             #找到cp_latency_cycle，cm_latency_cycle，dram_read，dram_store_cycle中的最大值, max_variable存储其最大值的名称
             # 使用字典存储变量及其值
             variables = {
