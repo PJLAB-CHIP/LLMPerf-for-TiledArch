@@ -3,6 +3,13 @@ import json
 import pandas as pd
 import math
 from typing import Union
+
+
+TB=1024**4
+GB=1024**3
+MB=1024**2
+KB=1024
+
 def load_config(input_path):
     # 读取json配置文件
     with open(input_path, 'r') as file:
