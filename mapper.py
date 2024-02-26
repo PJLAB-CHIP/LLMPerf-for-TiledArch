@@ -37,18 +37,20 @@ def gemm_auto_opt_mapper(op,arch,input_stationary=True,Nm_Nn=None,fusion_op1=Non
             i_size=MBytes(ishape)
             if fusion_op1!=None:
                 if fusion_op1['wshape']!=None:
-                    i_size+=(MBytes(fusion_op1['wshape']))/nm
+                    i_size+=(MBytes(fusion_op1['wshape']))
                 cp.append([fusion_op1['compute']/nm,0])
             i_params=[i_size,nm]
-            o_params=[MBytes(oshape)]
-            w_params=[MBytes(wshape),nn]
+            o_size=MBytes(oshape)
             cp.append([op['compute']/nm/nn,1])
             if fusion_op2!=None:
                 if fusion_op2['wshape']!=None:
                     o_size+=(MBytes(fusion_op2['wshape']))/nm/nn
                 cp.append([fusion_op2['compute']/nn/nm,0])
+            o_params=[o_size,nm*nn]
+            w_params=[MBytes(wshape),nn]
             cm_size,cm_type,cm_hops=w_params[0],0,5
-            #print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
+
+            print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
             sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
             #print(arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops))
             if tot_utilization>max_utilization and sram_cap_req:
@@ -66,7 +68,7 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=False):
     MB=1024*1024
     config=model.config
     dims=[config['B'],config['S'],int(config['H']/config['A']),config['A']]
-    print("config['A']",config['A'])
+    #print("config['A']",config['A'])
     Tx=block_range(dims[1],min_block=1)
     Ty=block_range(dims[1],min_block=1)
     if Tx_Ty!=None:
@@ -86,7 +88,7 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=False):
             flash_vector_cp_size= 5*tx*ty*dims[2]
             cp=[[vector_cp_size/GB,0],[2*2*tx*ty*dims[2]/GB,1],[flash_vector_cp_size/GB,0]]
             cm_size,cm_type,cm_hops=w_params[0],0,1
-            print(i_params, o_params, w_params, cp,  cm_size, cm_type,cm_hops)
+            #print(i_params, o_params, w_params, cp,  cm_size, cm_type,cm_hops)
             sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute(i_params, o_params, w_params, cp,  cm_size, cm_type,cm_hops)
 
             if tot_utilization>max_utilization and sram_cap_req:
@@ -102,7 +104,7 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=False):
 def vector_mapper(op,arch,splits=None,details=False):
     assert op['ishape']==op['oshape']
     io_shape,w_shape=op['ishape'],op['wshape']
-    assert (op['name'] in ['RMSNorm','RMSNorm2','Hadamard','ResAdd','ResAdd2']) and (op['type']=='Vector')
+    assert (op['name'] in ['RMSNorm','RMSNorm2','Hadamard','ResAdd','ResAdd2',]) and (op['type']=='Vector')
     i_split=op['ishape'][1]#RMS只能切一个维度
     if splits==None:
         if op['name'] in ['Hadamard','ResAdd','ResAdd2']:
@@ -143,7 +145,7 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     if QKV_fusion:
         ops["QKV_fusion"] =model.gen_gemm("QKV_fusion",[model.config["B"], model.config["S"], model.config["H"],3*model.config["H"]])
         Nm_Nn=[32,512] if preset else None
-        mapping_result['QKV_fusion']=gemm_auto_opt_mapper(ops['QKV_fusion'],arch,Nm_Nn=[32,512],fusion_op1=ops['RMSNorm'],details=details)
+        mapping_result['QKV_fusion']=gemm_auto_opt_mapper(ops['QKV_fusion'],arch,Nm_Nn=Nm_Nn,fusion_op1=ops['RMSNorm'],details=details)
         del ops['Q_proj']
         del ops['K_proj']
         del ops['V_proj']
@@ -155,7 +157,7 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
         mapping_result['V_proj']=gemm_auto_opt_mapper(ops['V_proj'],arch,Nm_Nn=Nm_Nn,details=details)
         del ops['RMSNorm']
         del ops['Q_proj']
-    
+    '''
     #2
     Tx_Ty=[256,256] if preset else None  #wanghuizheng
     mapping_result['Flashatten']=flashatten_mapper(model,arch,Tx_Ty=Tx_Ty,details=details)
@@ -171,8 +173,6 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     #3
     
     Nm_Nn=[16,1024] if preset else None
-    print(ops['FFNup'])
-    print(ops['FFNgate'])
     mapping_result['FFNup&SiLU']=gemm_auto_opt_mapper(ops['FFNup'],arch,Nm_Nn=Nm_Nn,fusion_op2=ops['SiLU'],details=details)
     del ops['SiLU']
     mapping_result['FFNgate']=gemm_auto_opt_mapper(ops['FFNgate'],arch,Nm_Nn=Nm_Nn,details=details)
@@ -181,7 +181,7 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     Nm_Nn=[86*3,86*3] if preset else None
     mapping_result['FFN2']=gemm_auto_opt_mapper(ops['FFN2'],arch,Nm_Nn=None,details=details)
     mapping_result['ResAdd2']=vector_mapper(ops['ResAdd2'],arch,splits=None,details=details)
-    
+    '''
     print('-'*40+'mapping_result'+'-'*40)
     tot_latency=0
     tot_cp_latency=0
@@ -206,5 +206,5 @@ if __name__ == "__main__":
     tx8_config=load_config('hardware_parameter.json')
     hardware=arch.Tx8(tx8_config)
     print(hardware.config)
-    mapping_result=manual_mapper(llama7b,hardware,preset=True,details=True)
+    mapping_result=manual_mapper(llama7b,hardware,preset=True,details=False)
 
