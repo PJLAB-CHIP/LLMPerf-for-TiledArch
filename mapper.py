@@ -49,8 +49,7 @@ def gemm_auto_opt_mapper(op,arch,input_stationary=True,Nm_Nn=None,fusion_op1=Non
             o_params=[o_size,nm*nn]
             w_params=[MBytes(wshape),nn]
             cm_size,cm_type,cm_hops=w_params[0],0,5
-
-            print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
+            #print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
             sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
             #print(arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops))
             if tot_utilization>max_utilization and sram_cap_req:
@@ -63,9 +62,9 @@ def gemm_auto_opt_mapper(op,arch,input_stationary=True,Nm_Nn=None,fusion_op1=Non
     return result
 
 def flashatten_mapper(model,arch,Tx_Ty=None,details=False):
-    #将Q,KV分成特定的块数，同时将不同的块分配到tile上，每个tile上一块。其中Q视为input,K&V视为权重
-    GB=1024*1024*1024
-    MB=1024*1024
+    #将Q,KV分成特定的块数，同时将不同的块分配到tile上，每个tile上一块。其中Q视为input,K&V视为权重；
+    #Q:[B,Tx,H/A,A] KV=[B,Ty,H/A,A] S=[B,Tx,H/A,A]
+    #外层循环次数 S/Tx,内层循环次数 S/Ty，一轮内层循环结束才输出部分和的结果S=[B,Tx,H/A,A]，而不是内层循环次数*外层循环次数
     config=model.config
     dims=[config['B'],config['S'],int(config['H']/config['A']),config['A']]
     #print("config['A']",config['A'])
@@ -81,7 +80,7 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=False):
             current_tx_ty=[tx,ty]
             Q_RoPE_wsize=model.config['Q']//8*tx*model.config['H']//model.config['A']/MB
             K_RoPE_wsize=model.config['Q']//8*ty*model.config['H']//model.config['A']/MB
-            i_params=[MBytes([dims[0],tx,dims[2]])+Q_RoPE_wsize,math.ceil(dims[1]//tx*dims[3])]# 将多头也进行overlao，隐藏Q的输入时间
+            i_params=[MBytes([dims[0],tx,dims[2]])+Q_RoPE_wsize,dims[3]*math.ceil(dims[1]//tx)]# 将多头也进行overlao，隐藏Q的输入时间
             o_params=[MBytes([dims[0],tx,ty])]
             w_params=[2*MBytes([dims[0],ty,dims[2]])+K_RoPE_wsize,math.ceil(dims[1]//ty)]#K+V
             vector_cp_size= model.config['B']*tx*model.config['H']//model.config['A']+ model.config['B']*ty*model.config['H']//model.config['A']#RoPE
@@ -144,7 +143,7 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     
     if QKV_fusion:
         ops["QKV_fusion"] =model.gen_gemm("QKV_fusion",[model.config["B"], model.config["S"], model.config["H"],3*model.config["H"]])
-        Nm_Nn=[32,512] if preset else None
+        Nm_Nn=[16,512] if preset else None
         mapping_result['QKV_fusion']=gemm_auto_opt_mapper(ops['QKV_fusion'],arch,Nm_Nn=Nm_Nn,fusion_op1=ops['RMSNorm'],details=details)
         del ops['Q_proj']
         del ops['K_proj']
@@ -157,7 +156,7 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
         mapping_result['V_proj']=gemm_auto_opt_mapper(ops['V_proj'],arch,Nm_Nn=Nm_Nn,details=details)
         del ops['RMSNorm']
         del ops['Q_proj']
-    '''
+    
     #2
     Tx_Ty=[256,256] if preset else None  #wanghuizheng
     mapping_result['Flashatten']=flashatten_mapper(model,arch,Tx_Ty=Tx_Ty,details=details)
@@ -181,7 +180,7 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     Nm_Nn=[86*3,86*3] if preset else None
     mapping_result['FFN2']=gemm_auto_opt_mapper(ops['FFN2'],arch,Nm_Nn=None,details=details)
     mapping_result['ResAdd2']=vector_mapper(ops['ResAdd2'],arch,splits=None,details=details)
-    '''
+    
     print('-'*40+'mapping_result'+'-'*40)
     tot_latency=0
     tot_cp_latency=0
@@ -206,5 +205,6 @@ if __name__ == "__main__":
     tx8_config=load_config('hardware_parameter.json')
     hardware=arch.Tx8(tx8_config)
     print(hardware.config)
+    #preset 是否使用预设切分;details是否打印映射的详细信息
     mapping_result=manual_mapper(llama7b,hardware,preset=True,details=False)
 
