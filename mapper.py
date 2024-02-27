@@ -61,10 +61,11 @@ def gemm_auto_opt_mapper(op,arch,input_stationary=True,Nm_Nn=None,fusion_op1=Non
     result={"latency":best_latency,'utilization':max_utilization,'cp_latency':total_cp_latency}
     return result
 
-def flashatten_mapper(model,arch,Tx_Ty=None,details=False):
+def flashatten_mapper(model,arch,Tx_Ty=None,details=False,Head_fused=False):
     #将Q,KV分成特定的块数，同时将不同的块分配到tile上，每个tile上一块。其中Q视为input,K&V视为权重；
     #Q:[B,Tx,H/A,A] KV=[B,Ty,H/A,A] S=[B,Tx,H/A,A]
     #外层循环次数 S/Tx,内层循环次数 S/Ty，一轮内层循环结束才输出部分和的结果S=[B,Tx,H/A,A]，而不是内层循环次数*外层循环次数
+    #Head_fused 表示是否多头输入Q预加载优化
     config=model.config
     dims=[config['B'],config['S'],int(config['H']/config['A']),config['A']]
     #print("config['A']",config['A'])
@@ -80,11 +81,16 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=False):
             current_tx_ty=[tx,ty]
             Q_RoPE_wsize=model.config['Q']//8*tx*model.config['H']//model.config['A']/MB
             K_RoPE_wsize=model.config['Q']//8*ty*model.config['H']//model.config['A']/MB
-            i_params=[MBytes([dims[0],tx,dims[2]])+Q_RoPE_wsize,dims[3]*math.ceil(dims[1]//tx)]# 将多头也进行overlap，隐藏Q的输入时间
-            o_params=[MBytes([dims[0],tx,ty]),dims[3]*math.ceil(dims[1]//tx)]
+            if Head_fused:
+                head=dims[3]
+            else:
+                head=1
+            i_params=[MBytes([dims[0],tx,dims[2]])+Q_RoPE_wsize,head*math.ceil(dims[1]//tx)]# 将多头也进行overlap，隐藏Q的输入时间
+            o_params=[MBytes([dims[0],tx,ty]),head*math.ceil(dims[1]//tx)]
             w_params=[2*MBytes([dims[0],ty,dims[2]])+K_RoPE_wsize,math.ceil(dims[1]//ty)]#K+V
             vector_cp_size=model.config['B']*tx*model.config['H']//model.config['A']+ model.config['B']*ty*model.config['H']//model.config['A']#RoPE
-            flash_vector_cp_size=1*tx*ty*dims[2]
+            flash_vector_cp_size=5*tx*ty#*dims[2]
+            #cp=[[2*2*tx*ty*dims[2]/GB,1]]
             cp=[[vector_cp_size/GB,0],[2*2*tx*ty*dims[2]/GB,1],[flash_vector_cp_size/GB,0]]
             cm_size,cm_type,cm_hops=w_params[0],0,1
             #print(i_params, o_params, w_params, cp,  cm_size, cm_type,cm_hops)
@@ -96,8 +102,13 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=False):
                 best_latency=tot_latency
     if details:
         print('{:<15}, dims={}, best={}'.format('Flashatten',dims,best_tx_ty)) 
-        print('one head latency={}, one head compute latency={}'.format(best_latency,total_cp_latency)) 
-    result={"latency":best_latency,'utilization':max_utilization,'cp_latency':total_cp_latency}
+        if Head_fused:
+            one_head_latency,one_head_cp_latency=best_latency/dims[3],total_cp_latency/dims[3]
+        else:
+            one_head_latency,one_head_cp_latency=best_latency,total_cp_latency
+
+        print('latency={}, compute latency={}'.format(one_head_latency,one_head_cp_latency)) 
+    result={"latency":dims[3]//head*best_latency,'utilization':max_utilization,'cp_latency':dims[3]//head*total_cp_latency}
     return result
 
 def vector_mapper(op,arch,splits=None,details=False):
@@ -143,14 +154,15 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     
     if QKV_fusion:
         ops["QKV_fusion"] =model.gen_gemm("QKV_fusion",[model.config["B"], model.config["S"], model.config["H"],3*model.config["H"]])
-        Nm_Nn=[16,512] if preset else None
+        Nm_Nn=[256,128] if preset else None
+        #mapping_result['QKV_fusion']=gemm_auto_opt_mapper(ops['QKV_fusion'],arch,Nm_Nn=Nm_Nn,fusion_op1=None,details=details)
         mapping_result['QKV_fusion']=gemm_auto_opt_mapper(ops['QKV_fusion'],arch,Nm_Nn=Nm_Nn,fusion_op1=ops['RMSNorm'],details=details)
         del ops['Q_proj']
         del ops['K_proj']
         del ops['V_proj']
         del ops['RMSNorm']
     else:
-        Nm_Nn=[32,128] if preset else None
+        Nm_Nn=[16,128] if preset else None
         mapping_result['RMSNorm&Q_proj']=gemm_auto_opt_mapper(ops['Q_proj'],arch,Nm_Nn=Nm_Nn,fusion_op1=ops['RMSNorm'],details=details)
         mapping_result['K_proj']=gemm_auto_opt_mapper(ops['K_proj'],arch,Nm_Nn=Nm_Nn,details=details)
         mapping_result['V_proj']=gemm_auto_opt_mapper(ops['V_proj'],arch,Nm_Nn=Nm_Nn,details=details)
@@ -158,8 +170,9 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
         del ops['Q_proj']
     
     #2
+    
     Tx_Ty=[256,256] if preset else None  #wanghuizheng
-    mapping_result['Flashatten']=flashatten_mapper(model,arch,Tx_Ty=Tx_Ty,details=details)
+    mapping_result['Flashatten']=flashatten_mapper(model,arch,Tx_Ty=Tx_Ty,details=True)
     del ops['RoPE(Q)']
     del ops['RoPE(K)']
     del ops['QK^T']
@@ -176,7 +189,7 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     del ops['SiLU']
     mapping_result['FFNgate']=gemm_auto_opt_mapper(ops['FFNgate'],arch,Nm_Nn=Nm_Nn,details=details)
     mapping_result['Hadamard']=vector_mapper(ops['Hadamard'],arch,splits=None)
-
+    
     Nm_Nn=[86*3,86*3] if preset else None
     mapping_result['FFN2']=gemm_auto_opt_mapper(ops['FFN2'],arch,Nm_Nn=None,details=details)
     mapping_result['ResAdd2']=vector_mapper(ops['ResAdd2'],arch,splits=None,details=details)
