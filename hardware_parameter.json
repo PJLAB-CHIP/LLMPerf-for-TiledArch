@@ -1,9 +1,0 @@
-{
-    "4X4 tile": 16,
-    "sram_size": 3,
-    "noc_bandwidth": 128,
-    "Dram_bandwidth": 100,
-    "Gemm": 8,
-    "Vector": 0.0625,
-    "One_Hops": 0.005
-}
