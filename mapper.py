@@ -178,7 +178,7 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
         del ops['Q_proj']
     
     #2
-    '''
+    
     Tx_Ty=[256,256] if preset else None  #wanghuizheng
     mapping_result['Flashatten']=flashatten_mapper(model,arch,Tx_Ty=Tx_Ty,details=True)
     del ops['RoPE(Q)']
@@ -201,7 +201,7 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     Tm_Tn=[4, 128] if preset else None
     mapping_result['FFN2']=gemm_auto_opt_mapper(ops['FFN2'],arch,Tm_Tn=Tm_Tn,details=details)
     mapping_result['ResAdd2']=vector_mapper(ops['ResAdd2'],arch,splits=None,details=details)
-    '''
+    
     print('-'*40+'mapping_result'+'-'*40)
     tot_latency=0
     tot_cp_latency=0
