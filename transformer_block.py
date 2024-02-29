@@ -160,7 +160,7 @@ class Llama_block():
 
 if __name__ == "__main__":
     input_path = "./input/transformer/input0.json"
-    output_path = "./output/transformer/ops.xlsx"
+    output_path = "./output/transformer/llama.xlsx"
     config = load_config(input_path)
     llama7b = Llama_block(config)
     llama7b.print_ops()

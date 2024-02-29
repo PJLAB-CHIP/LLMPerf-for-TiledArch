@@ -6,5 +6,5 @@
     "DRAM_LATENCY(us)": 0.1,
     "GEMM(TFLOPS)": 8,
     "VECTOR(TOPS)": 0.0625,
-    "HOP_LATENCY(us)": 0.005
+    "HOP_LATENCY(us)": 0.01
 }

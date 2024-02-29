@@ -248,7 +248,7 @@ class Tx8:
                 elif max_variable ==  "dram_read":
                     latency = total_dram_read + dram_store_per + cp_latency_per[1]
                 else:
-                    latency = total_dram_store + dram_read_cycle + cp_latency_per[1]
+                    latency = total_dram_store + dram_read_cycle[1] + cp_latency_per[1]
         else:#flash-attention, vector-GEMM-vector连接（len_cp == 3)
             variables = {
                 "cp_latency_cycle": cp_latency_cycle[1],
@@ -477,7 +477,9 @@ if __name__ == "__main__":
     
     # Projection模块的RMSNorm算子与一个GEMM算子融合并验证其结果是否正确
     print("Projection的RMSNorm与GEMM算子融合验证:")
-    verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([2.00048828,16], [0.015625,2048],[0.25,128], [[0.00390625,0],[0.0625,1]], 0.25, 0,  5)
+    #[32.0, 1] [86.0, 1] [86.0, 1] [[344.0, 1], [0.16796875, 0]] 86.0 0 5
+    #[2.00048828,16], [0.015625,2048],[0.25,128], [[0.00390625,0],[0.0625,1]], 0.25, 0,  5
+    verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([32.0, 1] ,[86.0, 1],[86.0, 1] ,[[344.0, 1], [0.16796875, 0]] ,86.0 ,0 ,5)
     print("是否满足SRAM要求:", verification_result)
     print("总计算时间:", total_cp_latency)
     print("总通信时间:", total_cm_latency)
