@@ -38,17 +38,13 @@ def dim_analysis(optype,dims,para_dims):
         w_shape=[math.ceil(new_shape[2]),math.ceil(new_shape[3])]
         o_shape=[math.ceil(new_shape[0]),math.ceil(new_shape[1]),math.ceil(new_shape[3])]
         return new_shape,i_shape,o_shape,w_shape,reduce
-
 def block_range(dim,min_block=1):
-    alter_groups=[]
-    exp=math.ceil(math.log2(dim)+1)
-    if min_block<dim:
-        for i in range(exp):
-            temp=2**i
-            alter_groups.append(temp)
-        return alter_groups #划分的数量
-    else:
-        return [min_block] #划分的数量
+    factors = []
+    for i in range(1, dim + 1):
+        if dim % i == 0 and i >= min_block:
+            factors.append(i)
+    return factors
+
 
 if __name__ == "__main__":
-    print(block_range(1024,min_block=16))
+    print(block_range(11008,min_block=1))
