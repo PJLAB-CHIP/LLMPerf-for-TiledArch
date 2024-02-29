@@ -38,13 +38,19 @@ def dim_analysis(optype,dims,para_dims):
         w_shape=[math.ceil(new_shape[2]),math.ceil(new_shape[3])]
         o_shape=[math.ceil(new_shape[0]),math.ceil(new_shape[1]),math.ceil(new_shape[3])]
         return new_shape,i_shape,o_shape,w_shape,reduce
+
 def block_range(dim,min_block=1):
     factors = []
-    for i in range(1, dim + 1):
-        if dim % i == 0 and i >= min_block:
-            factors.append(i)
+    sqrt_n = int(math.sqrt(dim))
+    for i in range(1, sqrt_n + 1):
+        if dim % i == 0 :
+            if i >= min_block:
+                factors.append(i)
+            if i != dim // i:
+                if dim // i >= min_block:
+                    factors.append(dim // i)
+    #factors.sort()  # 如果要排序因子列表，请取消注释此行
     return factors
 
-
 if __name__ == "__main__":
-    print(block_range(11008,min_block=1))
+    print(block_range(11008,min_block=16))
