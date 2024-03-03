@@ -10,7 +10,6 @@ from gemm_tiling import *
 # w_params = [w_size, w_flag] w_size为一份输出的大小，单位为MB；w_flag为权重的总份数；w_cm_flag为一轮内通信的次数，例如15次，则计算和存储是16次
 # cp=[[cp_size,cp_type],...]为计算量，单位为GFLOPs, cp_type为计算类型, 这里认为0为Vector，1为Gemm
 # cm_size为通信量大小，单位MB,cm_type 0,cm_hops为通信的最大跳数 
-
 def test_mapper(model,arch,details=True):
     #ops=model.ops
     ops={}
@@ -22,7 +21,7 @@ def test_mapper(model,arch,details=True):
     # B = 1
     ops["test_gemm"] =model.gen_gemm("test_gemm",[B, M, K,N])
     print(ops)
-    tile_m_tile_n_g=[[128,64],[256,32],[32,128],[64,64],[128,32],[256,32],[32,128]]
+    tile_m_tile_n_g=[[128,64],[256,32],[128,32],[32,128],[64,64],[256,32],[64,128]]
     for tile_m_tile_n in tile_m_tile_n_g:
         print('1'*80)
         tile_m,tile_n=tile_m_tile_n
@@ -35,9 +34,10 @@ def test_mapper(model,arch,details=True):
         print('-'*80)
         
         utilization = gemm_tiling_weight_stationary(B, M, K, N, tile_m, tile_n, print_details=details)
-        print(f"test_gemm_daixu, M={M}, K={K}, N={N}, B={B}, tile_m={tile_m}, tile_n={tile_n}, stationary: input, utilization={utilization:.2f}%")
+        print(f"test_gemm_daixu, M={M}, K={K}, N={N}, B={B}, tile_m={tile_m}, tile_n={tile_n}, stationary: weight, utilization={utilization:.2f}%")
         mapping_result['test_gemm']=gemm_auto_opt_mapper(ops['test_gemm'],arch,input_stationary = False, Tm_Tn=Tm_Tn,details=details)
         print('test_gemm,latency={},cp_latency={},utilization={:.2f}%'.format(mapping_result['test_gemm']['latency'],mapping_result['test_gemm']['cp_latency'],mapping_result['test_gemm']['utilization']*100))
+       
     #2
     '''
     Tx_Ty=[256,256] if preset else None  #wanghuizheng
