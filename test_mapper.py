@@ -17,7 +17,7 @@ def test_mapper(model,arch,details=True):
     M, K , N = 4096, 4096, 4096
     QKV = 1   # QKV = 3, if fuse q k v into one matrix
     N = N * QKV
-    B = 1
+    B = 16
     # B = 1
     ops["test_gemm"] =model.gen_gemm("test_gemm",[B, M, K,N])
     print(ops)
