@@ -10,6 +10,13 @@ GB=1024**3
 MB=1024**2
 KB=1024
 
+T=1000**4
+G=1000**3
+M=1000**2
+K=1000
+
+
+
 def load_config(input_path):
     # 读取json配置文件
     with open(input_path, 'r') as file:
