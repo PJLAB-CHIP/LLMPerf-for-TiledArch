@@ -537,7 +537,7 @@ class Tx8:
             else:
                 w_cm_flag = self.config["TILE_NUM"] - 1
             cp_latency_cycle[i] = (w_cm_flag + 1) * cp_latency_per[i]#每一轮的计算时间
-            #print(cp_latency_cycle[i])
+            print(cp_latency_cycle[i])
             
         w_cm_flag = self.config["TILE_NUM"] - 1
         cm_latency_cycle = w_cm_flag * cm_latency_per#每一轮的通信时间；len_cp不为1时也只有一个算子（GEMM）进行通信
@@ -577,11 +577,6 @@ class Tx8:
         input_cycle_in = input_load_time + dram_read_cycle[1]
         cp_cycle_in = cp_latency_cycle_in[0] + cp_latency_cycle_in[1] + cp_latency_cycle_in[2]
         latency_cycle_in = max(input_cycle_in,cp_cycle_in)
-        # print(input_load_time,dram_store_cycle_in, dram_read_cycle[1],cp_latency_cycle_in[1])
-        # print(dram_store_cycle_in,dram_store_cycle)
-        # print(cp_latency_cycle_in[0],cp_latency_cycle_in[1],cp_latency_cycle_in[2])
-    
-    
         #外层循环n1
         n1 = int(math.ceil(i_params[1]/self.config["TILE_NUM"]))
 
@@ -606,7 +601,7 @@ class Tx8:
         
         total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time
         
-        latency = input_cycle_in + cp_cycle_in - cp_latency_cycle_in[0] + (n1 - 1) * latency_cycle_in + dram_store_cycle_in
+        latency = input_cycle_in + cp_cycle_in - cp_latency_cycle_in[0] + (n1 - 1) * latency_cycle_in + dram_store_cycle
         #print(dram_store_cycle_in,n1,input_load_time)
         
         Utilization = total_cp_latency / latency
@@ -700,7 +695,7 @@ if __name__ == "__main__":
 
 # # 创建Tx8类的实例
 # arch = Tx8()
-
+    '''
     #使用Projection模块第一个RMSNorm算子验证其结果是否正确
     print("Projection的RMSNorm算子验证(后续不复用):")
     verification_result_0, total_cp_latency_0, total_cm_latency_0, total_DRAM_0, latency_0, Utilization_0 = arch.execute([2,16], [2,16],[0.00048828,16], [[0.00390625,0]], 0, 0,  0)
@@ -803,7 +798,7 @@ if __name__ == "__main__":
     print("总访存时间:", total_DRAM)
     print("总延迟:", latency)
     print("利用率:", Utilization)
-    
+    '''
     # flash-attention测试
     print("flash-attention算子验证1:")
     verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.125, 16], [0.125, 16], [0.1875, 16], [[6.103515625e-05, 0], [0.03125, 1], [0.00030517578125, 0]], 0.1875, 0, 1 )
@@ -814,6 +809,7 @@ if __name__ == "__main__":
     print("总延迟:", latency)
     print("利用率:", Utilization)
     
+    '''
     # flash-attention测试
     print("flash-attention算子验证2:")
     verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.125, 512], [0.125, 512], [0.1875, 16], [[6.103515625e-05, 0], [0.03125, 1], [0.00030517578125, 0]], 0.1875, 0, 1 )
@@ -833,3 +829,13 @@ if __name__ == "__main__":
     print("总访存时间:", total_DRAM)
     print("总延迟:", latency)
     print("利用率:", Utilization)
+
+    print("flash-attention算子验证4:")
+    verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.00390625, 512] ,[0.0001220703125, 512] ,[0.005859375, 512] ,[[0, 0], [3.2768e-05, 1], [0, 0]] ,0.005859375, 0 ,1 )
+    print("是否满足SRAM要求:", verification_result)
+    print("总计算时间:", total_cp_latency)
+    print("总通信时间:", total_cm_latency)
+    print("总访存时间:", total_DRAM)
+    print("总延迟:", latency)
+    print("利用率:", Utilization)  
+    '''

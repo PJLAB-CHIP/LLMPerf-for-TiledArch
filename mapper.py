@@ -97,14 +97,15 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=True,Head_fused=True):
             else:
                 head=1
             i_params=[MBytes([dims[0],tx,dims[2]])+Q_RoPE_wsize,head*math.ceil(dims[1]//tx)]# 将多头也进行overlap，隐藏Q的输入时间
-            o_params=[MBytes([dims[0],tx,ty]),head*math.ceil(dims[1]//tx)]
+            o_params=[MBytes([dims[0],tx,dims[2]]),head*math.ceil(dims[1]//tx)]
             w_params=[2*MBytes([dims[0],ty,dims[2]])+K_RoPE_wsize,math.ceil(dims[1]//ty)]#K+V
             vector_cp_size=model.config['B']*tx*model.config['H']//model.config['A']+ model.config['B']*ty*model.config['H']//model.config['A']#RoPE
             flash_vector_cp_size=5*tx*ty#*dims[2]
             #cp=[[2*2*tx*ty*dims[2]/G,1]]
-            cp=[[vector_cp_size/G,0],[2*2*tx*ty*dims[2]/G,1],[flash_vector_cp_size/G,0]]
+            cp=[[0,0],[2*2*tx*ty*dims[2]/G,1],[0,0]]
+            #cp=[[vector_cp_size/G,0],[2*2*tx*ty*dims[2]/G,1],[flash_vector_cp_size/G,0]]
             cm_size,cm_type,cm_hops=w_params[0],0,1
-            #print('test',i_params,o_params,w_params,cp,cm_size,cm_type,cm_hops)
+            print('test',i_params,o_params,w_params,cp,cm_size,cm_type,cm_hops)
             sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute(i_params, o_params, w_params, cp,  cm_size, cm_type,cm_hops)
             #print('data',sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization)
             if tot_utilization>max_utilization and sram_cap_req:
@@ -112,8 +113,8 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=True,Head_fused=True):
                 best_tx_ty=current_tx_ty
                 best_latency=tot_latency
                 best_total_cp_latency=total_cp_latency
-                #print('test',i_params,o_params,w_params,cp,cm_size,cm_type,cm_hops)
-                #print('data,current_tx_ty={},sram_cap_req={},total_cp_latency={},tot_latency={}, tot_utilization={}'.format(best_tx_ty,sram_cap_req,total_cp_latency,tot_latency, tot_utilization))
+                print('test',i_params,o_params,w_params,cp,cm_size,cm_type,cm_hops)
+                print('data,current_tx_ty={},sram_cap_req={},total_cp_latency={},tot_latency={}, tot_utilization={}'.format(best_tx_ty,sram_cap_req,total_cp_latency,tot_latency, tot_utilization))
     if details:
         print('{:<15}, dims={}, best={}'.format('Flashatten',dims,best_tx_ty)) 
         if Head_fused:
@@ -186,8 +187,8 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     
     #2
     
-    Tx_Ty=[256,256] if preset else None  #wanghuizheng
-    mapping_result['Flashatten']=flashatten_mapper(model,arch,Tx_Ty=Tx_Ty,details=details,Head_fused=False)
+    Tx_Ty=[256,256] #if preset else None  #wanghuizheng
+    mapping_result['Flashatten']=flashatten_mapper(model,arch,Tx_Ty=Tx_Ty,details=details,Head_fused=True)
     
     del ops['RoPE(Q)']
     del ops['RoPE(K)']
