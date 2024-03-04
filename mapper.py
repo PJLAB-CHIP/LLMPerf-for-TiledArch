@@ -113,8 +113,8 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=True,Head_fused=True):
                 best_tx_ty=current_tx_ty
                 best_latency=tot_latency
                 best_total_cp_latency=total_cp_latency
-                print('test',i_params,o_params,w_params,cp,cm_size,cm_type,cm_hops)
-                print('data,current_tx_ty={},sram_cap_req={},total_cp_latency={},tot_latency={}, tot_utilization={}'.format(best_tx_ty,sram_cap_req,total_cp_latency,tot_latency, tot_utilization))
+                #print('test',i_params,o_params,w_params,cp,cm_size,cm_type,cm_hops)
+                #print('data,current_tx_ty={},sram_cap_req={},total_cp_latency={},tot_latency={}, tot_utilization={}'.format(best_tx_ty,sram_cap_req,total_cp_latency,tot_latency, tot_utilization))
     if details:
         print('{:<15}, dims={}, best={}'.format('Flashatten',dims,best_tx_ty)) 
         if Head_fused:
