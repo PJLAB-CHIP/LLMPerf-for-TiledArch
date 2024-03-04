@@ -69,7 +69,7 @@ def gemm_auto_opt_mapper(op,arch,input_stationary=True,Tm_Tn=None,fusion_op1=Non
     result={"latency":best_latency,'utilization':max_utilization,'cp_latency':total_cp_latency}
     return result
 
-def flashatten_mapper(model,arch,Tx_Ty=None,details=True,Head_fused=False):
+def flashatten_mapper(model,arch,Tx_Ty=None,details=True,Head_fused=True):
     #将Q,KV分成特定的块数，同时将不同的块分配到tile上，每个tile上一块。其中Q视为input,K&V视为权重；
     #Q:[B,Tx,H/A,A] KV=[B,Ty,H/A,A] S=[B,Tx,H/A,A]
     #外层循环次数 S/Tx,内层循环次数 S/Ty，一轮内层循环结束才输出部分和的结果S=[B,Tx,H/A,A]，而不是内层循环次数*外层循环次数
