@@ -53,7 +53,7 @@ class Llama_block():
         save_file(data, data_path)
     def gen_gemm(self,name,dims):
         assert len(dims)==4
-        unit = 1024 * 1024 * 1024
+        unit = 1000 * 1000 * 1000
         ishape=[dims[0],dims[1],dims[2]]
         wshape = [dims[2],dims[3]]
         oshape = [dims[0],dims[1],dims[3]]
@@ -62,7 +62,8 @@ class Llama_block():
     def construct_model(self):
 
         # GFLOPS unit
-        unit = 1024 * 1024 * 1024
+        unit = 1000 * 1000 * 1000
+        #unit = 1024 * 1024 * 1024
         # 1. RMSNorm phase
         # (batch_size, row, col)
         RMSNorm_input_shape = [self.config["B"], self.config["S"], self.config["H"]]
