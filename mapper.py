@@ -69,7 +69,7 @@ def gemm_auto_opt_mapper(op,arch,input_stationary=True,Tm_Tn=None,fusion_op1=Non
     result={"latency":best_latency,'utilization':max_utilization,'cp_latency':total_cp_latency}
     return result
 
-def flashatten_mapper(model,arch,Tx_Ty=None,details=True,Head_fused=True):
+def flashatten_mapper(model,arch,Tx_Ty=None,details=True,Head_fused=False):
     #将Q,KV分成特定的块数，同时将不同的块分配到tile上，每个tile上一块。其中Q视为input,K&V视为权重；
     #Q:[B,Tx,H/A,A] KV=[B,Ty,H/A,A] S=[B,Tx,H/A,A]
     #外层循环次数 S/Tx,内层循环次数 S/Ty，一轮内层循环结束才输出部分和的结果S=[B,Tx,H/A,A]，而不是内层循环次数*外层循环次数
@@ -77,13 +77,16 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=True,Head_fused=True):
     config=model.config
     dims=[config['B'],config['S'],int(config['H']/config['A']),config['A']]
     #print("config['A']",config['A'])
-    Tx=block_range(dims[1],min_block=1)
-    Ty=block_range(dims[1],min_block=1)
+    Tx=block_range(dims[1],min_block=1,max_block=dims[1]//arch.config['TILE_NUM'])
+    Ty=block_range(dims[1],min_block=1,max_block=dims[1]//arch.config['TILE_NUM'])
     if Tx_Ty!=None:
+        assert Tx_Ty[0]<=dims[1]//arch.config['TILE_NUM']
+        assert Tx_Ty[1]<=dims[1]//arch.config['TILE_NUM']
         Tx,Ty=[Tx_Ty[0]],[Tx_Ty[1]]
     max_utilization=0
     best_tx_ty=[]
-    best_latency=[]
+    best_latency=0
+    best_total_cp_latency=0
     for tx in Tx:#outer Q
         for ty in Ty:
             current_tx_ty=[tx,ty]
@@ -98,26 +101,29 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=True,Head_fused=True):
             w_params=[2*MBytes([dims[0],ty,dims[2]])+K_RoPE_wsize,math.ceil(dims[1]//ty)]#K+V
             vector_cp_size=model.config['B']*tx*model.config['H']//model.config['A']+ model.config['B']*ty*model.config['H']//model.config['A']#RoPE
             flash_vector_cp_size=5*tx*ty#*dims[2]
-            #cp=[[2*2*tx*ty*dims[2]/GB,1]]
-            cp=[[vector_cp_size/GB,0],[2*2*tx*ty*dims[2]/GB,1],[flash_vector_cp_size/GB,0]]
+            #cp=[[2*2*tx*ty*dims[2]/G,1]]
+            cp=[[vector_cp_size/G,0],[2*2*tx*ty*dims[2]/G,1],[flash_vector_cp_size/G,0]]
             cm_size,cm_type,cm_hops=w_params[0],0,1
-            #print(i_params, o_params, w_params, cp,  cm_size, cm_type,cm_hops)
+            #print('test',i_params,o_params,w_params,cp,cm_size,cm_type,cm_hops)
             sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute(i_params, o_params, w_params, cp,  cm_size, cm_type,cm_hops)
-
+            #print('data',sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization)
             if tot_utilization>max_utilization and sram_cap_req:
                 max_utilization=tot_utilization
                 best_tx_ty=current_tx_ty
                 best_latency=tot_latency
+                best_total_cp_latency=total_cp_latency
+                print('test',i_params,o_params,w_params,cp,cm_size,cm_type,cm_hops)
+                print('data,current_tx_ty={},sram_cap_req={},total_cp_latency={},tot_latency={}, tot_utilization={}'.format(best_tx_ty,sram_cap_req,total_cp_latency,tot_latency, tot_utilization))
     if details:
         print('{:<15}, dims={}, best={}'.format('Flashatten',dims,best_tx_ty)) 
         if Head_fused:
-            one_head_latency,one_head_cp_latency=best_latency/dims[3],total_cp_latency/dims[3]
+            one_head_latency,one_head_cp_latency=best_latency/dims[3],best_total_cp_latency/dims[3]
         else:
-            one_head_latency,one_head_cp_latency=best_latency,total_cp_latency
+            one_head_latency,one_head_cp_latency=best_latency,best_total_cp_latency
 
         print('latency={}, compute latency={}'.format(one_head_latency,one_head_cp_latency))
-    print(best_latency,total_cp_latency) 
-    result={"latency":dims[3]//head*best_latency,'utilization':max_utilization,'cp_latency':dims[3]//head*total_cp_latency}
+    print(best_latency,best_total_cp_latency) 
+    result={"latency":dims[3]//head*best_latency,'utilization':max_utilization,'cp_latency':dims[3]//head*best_total_cp_latency}
     return result
 
 def vector_mapper(op,arch,splits=None,details=False):
@@ -182,6 +188,7 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     
     Tx_Ty=[256,256] if preset else None  #wanghuizheng
     mapping_result['Flashatten']=flashatten_mapper(model,arch,Tx_Ty=Tx_Ty,details=details)
+    
     del ops['RoPE(Q)']
     del ops['RoPE(K)']
     del ops['QK^T']
