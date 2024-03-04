@@ -22,6 +22,7 @@ def test_mapper(model,arch,details=True):
     ops["test_gemm"] =model.gen_gemm("test_gemm",[B, M, K,N])
     print(ops)
     tile_m_tile_n_g=[[128,64],[256,32],[128,32],[32,128],[64,64],[256,32],[64,128]]
+    
     for tile_m_tile_n in tile_m_tile_n_g:
         print('1'*80)
         tile_m,tile_n=tile_m_tile_n
@@ -39,13 +40,15 @@ def test_mapper(model,arch,details=True):
         print('test_gemm,latency={},cp_latency={},utilization={:.2f}%'.format(mapping_result['test_gemm']['latency'],mapping_result['test_gemm']['cp_latency'],mapping_result['test_gemm']['utilization']*100))
        
     #2
-    '''
-    Tx_Ty=[256,256] if preset else None  #wanghuizheng
-    mapping_result['Flashatten']=flashatten_mapper(model,arch,Tx_Ty=Tx_Ty,details=details)
-    mapping_result['Linear']=gemm_auto_opt_mapper(ops['Linear'],arch,details=details)
-    mapping_result['RMSNorm2']=vector_mapper(ops['RMSNorm2'],arch,splits=None,details=details)
-    mapping_result['ResAdd']=vector_mapper(ops['ResAdd'],arch,splits=None,details=details)
-    '''
+    
+    #51,94
+    Tx_Ty=[256,256] #if preset else None  #wanghuizheng
+    mapping_result['Flashatten']=flashatten_mapper(model,arch,Tx_Ty=Tx_Ty,details=details,Head_fused=False)
+    print(mapping_result)
+    
+    mapping_result['Flashatten']=flashatten_mapper(model,arch,Tx_Ty=Tx_Ty,details=details,Head_fused=True)
+    print(mapping_result)
+    
 
 
 if __name__ == "__main__":
