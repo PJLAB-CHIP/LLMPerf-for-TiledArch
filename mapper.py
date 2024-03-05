@@ -1,6 +1,6 @@
-import tiled_arch_perf.transformer_block as tbk
-import tiled_arch_perf.arch_execution as arch
-from tiled_arch_perf.util import *
+import transformer_block as tbk
+import arch_execution as arch
+from util import *
 import math
 # fusion_op 表示gemm算子与vector算子融合
 # i_params = [i_size, i_flag] i_size为一份输入的大小，单位为MB；i_flag为输入的总份数，例如16/32/64等
