@@ -149,12 +149,12 @@ class Llama_block():
         Hadamard_output_shape = Hadamard_input_shape
         Hadamard_compute = Hadamard_input_shape[0]*Hadamard_input_shape[1]*Hadamard_input_shape[2]/unit 
         self.ops["Hadamard"] = {"name":"Hadamard", "type": "Vector", "ishape": Hadamard_input_shape, "wshape": Hadamard_weight_shape, "oshape": Hadamard_output_shape, "compute": Hadamard_compute}
-        # 17. FFN2
-        FFN2_input_shape = deepcopy(Hadamard_output_shape)
-        FFN2_weight_shape = [self.config["H'"], self.config["H"]]
-        FFN2_output_shape = [FFN2_input_shape[0], FFN2_input_shape[1], FFN2_weight_shape[1]]
-        FFN2_compute = 2*FFN2_input_shape[0]*FFN2_input_shape[1]*FFN2_weight_shape[0]*FFN2_weight_shape[1]/unit
-        self.ops["FFN2"] = {"name":"FFN2", "type": "GEMM", "ishape":FFN2_input_shape, "wshape": FFN2_weight_shape, "oshape": FFN2_output_shape, "compute": FFN2_compute}
+        # 17. FFNdown
+        FFNdown_input_shape = deepcopy(Hadamard_output_shape)
+        FFNdown_weight_shape = [self.config["H'"], self.config["H"]]
+        FFNdown_output_shape = [FFNdown_input_shape[0], FFNdown_input_shape[1], FFNdown_weight_shape[1]]
+        FFNdown_compute = 2*FFNdown_input_shape[0]*FFNdown_input_shape[1]*FFNdown_weight_shape[0]*FFNdown_weight_shape[1]/unit
+        self.ops["FFNdown"] = {"name":"FFNdown", "type": "GEMM", "ishape":FFNdown_input_shape, "wshape": FFNdown_weight_shape, "oshape": FFNdown_output_shape, "compute": FFNdown_compute}
         # 18. ResAdd
         self.ops["ResAdd2"] = {"name":"ResAdd2", "type": "Vector", "ishape": ResAdd_input_shape, "wshape": ResAdd_weight_shape, "oshape": ResAdd_output_shape, "compute": ResAdd_compute}
 
