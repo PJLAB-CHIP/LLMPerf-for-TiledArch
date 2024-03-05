@@ -255,8 +255,8 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
         ops['Hadamard'], arch, splits=None)
 
     Tm_Tn = [4, 128] if preset else None
-    mapping_result['FFN2'] = gemm_auto_opt_mapper(
-        ops['FFN2'], arch, Tm_Tn=Tm_Tn, details=details)
+    mapping_result['FFNdown'] = gemm_auto_opt_mapper(
+        ops['FFNdown'], arch, Tm_Tn=Tm_Tn, details=details)
     mapping_result['ResAdd2'] = vector_mapper(
         ops['ResAdd2'], arch, splits=None, details=details)
 
