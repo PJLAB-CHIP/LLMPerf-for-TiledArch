@@ -24,12 +24,13 @@ def gemm_auto_opt_mapper(op,arch,Tm_Tn=None,fusion_op1=None,fusion_op2=None,deta
     max_utilization=0
     best_parall=[]
     best_latency=[]
+    best_stationary=None
     for stationary in ['input','weight']:
         if stationary=='input':
             dims=op['ishape']+[op['wshape'][-1]]#[b,m,k,n]输入维度为[b,m,k] 权重维度为[k,n] 输出维度为[b,m,n]
         else:
             dims=[1,op['wshape'][1],op['wshape'][0],op['ishape'][0]*op['ishape'][1]]#[1,n,k,b*m]输入维度为[1,n,k] 权重维度为[k,b*m] 输出维度为[1,n,b*m]
-            print(dims)
+            #print(dims)
         tile_num=arch.config['TILE_NUM']
         Nm=block_range(dims[1],min_block=tile_num)
         Nn=block_range(dims[3],min_block=tile_num)
@@ -67,8 +68,9 @@ def gemm_auto_opt_mapper(op,arch,Tm_Tn=None,fusion_op1=None,fusion_op2=None,deta
                     max_utilization=tot_utilization
                     best_parall=current_parall
                     best_latency=tot_latency
+                    best_stationary=stationary
     if  details:      
-        print('{:<15}, dims={}, best={}, stationary={}'.format(op['name'],dims,best_parall,stationary))
+        print('{:<15}, dims={}, best={}, stationary={}'.format(op['name'],dims,best_parall,best_stationary))
     result={"latency":best_latency,'utilization':max_utilization,'cp_latency':total_cp_latency}
     return result
 
