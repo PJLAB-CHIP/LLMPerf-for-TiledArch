@@ -173,7 +173,11 @@ class Tx8:
         iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1
         iter_over_input_time = (n1 - 1) * time_one_iter_in
         last_iter_time = time_one_noc_pipe_flow
-        latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
+        if iter_over_weight_time + iter_over_input_time + last_iter_time >= total_cp_latency:
+            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
+        else:
+            latency = initial_load_time + total_cp_latency + dram_store_per
+        # latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
         
         Utilization = total_cp_latency / latency
         
@@ -269,7 +273,10 @@ class Tx8:
         # print(time_one_iter_w,iter_over_weight_time)
         iter_over_input_time = (n1 - 1) * time_one_iter_in
         last_iter_time = time_one_noc_pipe_flow
-        latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
+        if iter_over_weight_time + iter_over_input_time + last_iter_time >= total_cp_latency:
+            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
+        else:
+            latency = initial_load_time + total_cp_latency + dram_store_per
         # print(initial_load_time,iter_over_weight_time,iter_over_input_time,last_iter_time,dram_store_per)
         
         Utilization = total_cp_latency / latency
@@ -381,7 +388,11 @@ class Tx8:
         iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1
         iter_over_input_time = (n1 - 1) * time_one_iter_in
         last_iter_time = time_one_noc_pipe_flow
-        latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
+        if iter_over_weight_time + iter_over_input_time + last_iter_time >= total_cp_latency:
+            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
+        else:
+            latency = initial_load_time + total_cp_latency + dram_store_per
+        # latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
         
         Utilization = total_cp_latency / latency
         
@@ -495,7 +506,12 @@ class Tx8:
         iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1
         iter_over_input_time = (n1 - 1) * time_one_iter_in
         last_iter_time = time_one_noc_pipe_flow
-        latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
+        
+        if iter_over_weight_time + iter_over_input_time + last_iter_time >= total_cp_latency:
+            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
+        else:
+            latency = initial_load_time + total_cp_latency + dram_store_per
+        # latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
         
         Utilization = total_cp_latency / latency
         
@@ -601,8 +617,11 @@ class Tx8:
         
         total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time
         
+        
         latency = input_cycle_in + cp_cycle_in - cp_latency_cycle_in[0] + (n1 - 1) * latency_cycle_in + dram_store_cycle
         #print(dram_store_cycle_in,n1,input_load_time)
+        if latency <= total_cp_latency:
+            latency = total_cp_latency + dram_store_cycle
         
         Utilization = total_cp_latency / latency
         
@@ -692,6 +711,7 @@ class Tx8:
 if __name__ == "__main__":
     tx8_config = load_config("./hardware_parameter.json")
     arch = Tx8(tx8_config)
+    
 
 # # 创建Tx8类的实例
 # arch = Tx8()
@@ -799,15 +819,15 @@ if __name__ == "__main__":
     print("总延迟:", latency)
     print("利用率:", Utilization)
     '''
-    # flash-attention测试
-    print("flash-attention算子验证1:")
-    verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.125, 16], [0.125, 16], [0.1875, 16], [[6.103515625e-05, 0], [0.03125, 1], [0.00030517578125, 0]], 0.1875, 0, 1 )
-    print("是否满足SRAM要求:", verification_result)
-    print("总计算时间:", total_cp_latency)
-    print("总通信时间:", total_cm_latency)
-    print("总访存时间:", total_DRAM)
-    print("总延迟:", latency)
-    print("利用率:", Utilization)
+    # # flash-attention测试
+    # print("flash-attention算子验证1:")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.125, 16], [0.125, 16], [0.1875, 16], [[6.103515625e-05, 0], [0.03125, 1], [0.00030517578125, 0]], 0.1875, 0, 1 )
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # print("总通信时间:", total_cm_latency)
+    # print("总访存时间:", total_DRAM)
+    # print("总延迟:", latency)
+    # print("利用率:", Utilization)
     
     '''
     # flash-attention测试

@@ -14,7 +14,7 @@ import math
 # 10ns noc dram 100ns
 
 
-def gemm_auto_opt_mapper(op, arch, input_stationary=True, Tm_Tn=None, fusion_op1=None, fusion_op2=None, details=False):
+def gemm_auto_opt_mapper(op, arch, Tm_Tn=None, fusion_op1=None, fusion_op2=None, details=False):
     '''
     gemm算子映射切分策略搜索,默认input_stationary
     '''
@@ -24,60 +24,65 @@ def gemm_auto_opt_mapper(op, arch, input_stationary=True, Tm_Tn=None, fusion_op1
     if fusion_op2 != None and details:
         print('{} is fused with the next {}!'.format(
             op['name'], fusion_op2['name']))
-    if input_stationary:
-        # [b,m,k,n]输入维度为[b,m,k] 权重维度为[k,n] 输出维度为[b,m,n]
-        dims = op['ishape']+[op['wshape'][-1]]
-    else:
-        # [1,n,k,b*m]输入维度为[1,n,k] 权重维度为[k,b*m] 输出维度为[1,n,b*m]
-        dims = [1, op['wshape'][1], op['wshape']
-                [0], op['ishape'][0]*op['ishape'][1]]
-        print(dims)
-    tile_num = arch.config['TILE_NUM']
-    Nm = block_range(dims[1], min_block=tile_num)
-    Nn = block_range(dims[3], min_block=tile_num)
-    if Tm_Tn != None:
-        if input_stationary:
-            Nm, Nn = [math.ceil(dims[0]*dims[1]/Tm_Tn[0])
-                      ], [math.ceil(dims[3]/Tm_Tn[1])]
-        else:
-            Nm, Nn = [math.ceil(dims[0]*dims[1]/Tm_Tn[1])
-                      ], [math.ceil(dims[3]/Tm_Tn[0])]
+
     max_utilization = 0
     best_parall = []
     best_latency = []
-    for nm in Nm:
-        for nn in Nn:
-            current_parall = [1, nm, 1, nn]
-            cp = []
-            newshape, ishape, oshape, wshape, reduce = dim_analysis(
-                'GEMM', dims, current_parall)
-            i_size = MBytes(ishape)
-            if fusion_op1 != None:
-                if fusion_op1['wshape'] != None:
-                    i_size += (MBytes(fusion_op1['wshape']))
-                cp.append([fusion_op1['compute']/nm, 0])
-            i_params = [i_size, nm]
-            o_size = MBytes(oshape)
-            cp.append([op['compute']/nm/nn, 1])
-            if fusion_op2 != None:
-                if fusion_op2['wshape'] != None:
-                    o_size += (MBytes(fusion_op2['wshape']))/nm/nn
-                cp.append([fusion_op2['compute']/nn/nm, 0])
-            o_params = [o_size, nm*nn]
-            w_params = [MBytes(wshape), nn]
-            cm_size, cm_type, cm_hops = w_params[0], 0, 5
-            # print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
-            sram_cap_req, total_cp_latency, _, _, tot_latency, tot_utilization = arch.execute(
-                i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
-            # print(arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops))
-            if tot_utilization > max_utilization and sram_cap_req:
+    best_stationary = None
+    for stationary in ['input', 'weight']:
+        if stationary == 'input':
+            # [b,m,k,n]输入维度为[b,m,k] 权重维度为[k,n] 输出维度为[b,m,n]
+            dims = op['ishape']+[op['wshape'][-1]]
+        else:
+            # [1,n,k,b*m]输入维度为[1,n,k] 权重维度为[k,b*m] 输出维度为[1,n,b*m]
+            dims = [1, op['wshape'][1], op['wshape']
+                    [0], op['ishape'][0]*op['ishape'][1]]
+            # print(dims)
+        tile_num = arch.config['TILE_NUM']
+        Nm = block_range(dims[1], min_block=tile_num)
+        Nn = block_range(dims[3], min_block=tile_num)
+        if Tm_Tn != None:
+            if stationary == 'input':
+                Nm, Nn = [math.ceil(dims[0]*dims[1]/Tm_Tn[0])
+                          ], [math.ceil(dims[3]/Tm_Tn[1])]
+            else:
+                Nm, Nn = [math.ceil(dims[0]*dims[1]/Tm_Tn[1])
+                          ], [math.ceil(dims[3]/Tm_Tn[0])]
+
+        for nm in Nm:
+            for nn in Nn:
+                current_parall = [1, nm, 1, nn]
+                cp = []
+                newshape, ishape, oshape, wshape, reduce = dim_analysis(
+                    'GEMM', dims, current_parall)
+                i_size = MBytes(ishape)
+                if fusion_op1 != None:
+                    if fusion_op1['wshape'] != None:
+                        i_size += (MBytes(fusion_op1['wshape']))
+                    cp.append([fusion_op1['compute']/nm, 0])
+                i_params = [i_size, nm]
+                o_size = MBytes(oshape)
+                cp.append([op['compute']/nm/nn, 1])
+                if fusion_op2 != None:
+                    if fusion_op2['wshape'] != None:
+                        o_size += (MBytes(fusion_op2['wshape']))/nm/nn
+                    cp.append([fusion_op2['compute']/nn/nm, 0])
+                o_params = [o_size, nm*nn]
+                w_params = [MBytes(wshape), nn]
+                cm_size, cm_type, cm_hops = w_params[0], 0, 5
                 # print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
-                max_utilization = tot_utilization
-                best_parall = current_parall
-                best_latency = tot_latency
+                sram_cap_req, total_cp_latency, _, _, tot_latency, tot_utilization = arch.execute(
+                    i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
+                # print(arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops))
+                if tot_utilization > max_utilization and sram_cap_req:
+                    # print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
+                    max_utilization = tot_utilization
+                    best_parall = current_parall
+                    best_latency = tot_latency
+                    best_stationary = stationary
     if details:
         print('{:<15}, dims={}, best={}, stationary={}'.format(
-            op['name'], dims, best_parall, 'input' if input_stationary else 'weight'))
+            op['name'], dims, best_parall, best_stationary))
     result = {"latency": best_latency,
               'utilization': max_utilization, 'cp_latency': total_cp_latency}
     return result
@@ -228,7 +233,7 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
 
     # 2
 
-    Tx_Ty = [256, 256]  # if preset else None  #wanghuizheng
+    Tx_Ty = [256, 256] if preset else None  # wanghuizheng
     mapping_result['Flashatten'] = flashatten_mapper(
         model, arch, Tx_Ty=Tx_Ty, details=details, Head_fused=True)
 
