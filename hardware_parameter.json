@@ -2,7 +2,7 @@
     "TILE_NUM": 16,
     "SRAM(MB)": 3,
     "NOC_BW(GB/s)": 128,
-    "DRAM_BW(GB/s)": 100,
+    "DRAM_BW(GB/s)": 200,
     "DRAM_LATENCY(us)": 0.1,
     "GEMM(TFLOPS)": 8,
     "VECTOR(TOPS)": 0.0625,

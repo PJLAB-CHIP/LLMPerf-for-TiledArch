@@ -8,10 +8,7 @@ import math
 # w_params = [w_size, w_flag] w_size为一份输出的大小，单位为MB；w_flag为权重的总份数；w_cm_flag为一轮内通信的次数，例如15次，则计算和存储是16次
 # cp=[[cp_size,cp_type],...]为计算量，单位为GFLOPs, cp_type为计算类型, 这里认为0为Vector，1为Gemm
 # cm_size为通信量大小，单位MB,cm_type 0,cm_hops为通信的最大跳数 
-
 #算力10进制，存储二进制表示
-#noc占比随着切分份数变多而变大
-#10ns noc dram 100ns
 def gemm_auto_opt_mapper(op,arch,Tm_Tn=None,fusion_op1=None,fusion_op2=None,details=False):
     '''
     gemm算子映射切分策略搜索,默认input_stationary
@@ -20,7 +17,6 @@ def gemm_auto_opt_mapper(op,arch,Tm_Tn=None,fusion_op1=None,fusion_op2=None,deta
         print('{} is fused with the last {}!'.format(op['name'],fusion_op1['name']))
     if fusion_op2!=None and details:
         print('{} is fused with the next {}!'.format(op['name'],fusion_op2['name']))
-
     max_utilization=0
     best_parall=[]
     best_latency=[]
@@ -37,8 +33,10 @@ def gemm_auto_opt_mapper(op,arch,Tm_Tn=None,fusion_op1=None,fusion_op2=None,deta
         if Tm_Tn!=None:
             if stationary=='input':
                 Nm,Nn=[math.ceil(dims[0]*dims[1]/Tm_Tn[0])],[math.ceil(dims[3]/Tm_Tn[1])]
+                #print(Tm_Tn,dims,Nm,Nn)
             else:
                 Nm,Nn=[math.ceil(dims[0]*dims[1]/Tm_Tn[1])],[math.ceil(dims[3]/Tm_Tn[0])]
+                #print(Tm_Tn,dims,Nm,Nn)
 
         for nm in Nm:
             for nn in Nn:
@@ -53,18 +51,22 @@ def gemm_auto_opt_mapper(op,arch,Tm_Tn=None,fusion_op1=None,fusion_op2=None,deta
                 i_params=[i_size,nm]
                 o_size=MBytes(oshape)
                 cp.append([op['compute']/nm/nn,1])
+                #t=op['compute']/nm/nn
+                #print(nm,nn)
                 if fusion_op2!=None:
                     if fusion_op2['wshape']!=None:
                         o_size+=(MBytes(fusion_op2['wshape']))/nm/nn
+                        #print(fusion_op2['compute'])
                     cp.append([fusion_op2['compute']/nn/nm,0])
+                        
                 o_params=[o_size,nm*nn]
                 w_params=[MBytes(wshape),nn]
                 cm_size,cm_type,cm_hops=w_params[0],0,5
                 #print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
                 sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
                 #print(arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops))
+                #print("total_cp_latency",total_cp_latency)
                 if tot_utilization>max_utilization and sram_cap_req:
-                    #print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
                     max_utilization=tot_utilization
                     best_parall=current_parall
                     best_latency=tot_latency
@@ -135,7 +137,7 @@ def flashatten_mapper(model,arch,Tx_Ty=None,details=True,Head_fused=True):
 def vector_mapper(op,arch,splits=None,details=False):
     assert op['ishape']==op['oshape']
     io_shape,w_shape=op['ishape'],op['wshape']
-    assert (op['name'] in ['RMSNorm','RMSNorm2','Hadamard','ResAdd','ResAdd2',]) and (op['type']=='Vector')
+    assert (op['name'] in ['RMSNorm','RMSNorm2','Hadamard','ResAdd','ResAdd2','SiLU',]) and (op['type']=='Vector')
     i_split=op['ishape'][1]#RMS只能切一个维度
     if splits==None:
         if op['name'] in ['Hadamard','ResAdd','ResAdd2']:
@@ -151,7 +153,7 @@ def vector_mapper(op,arch,splits=None,details=False):
             o_params=[MBytes(io_shape)/split,split]
             w_params=[MBytes(w_shape)/split,split]#逐点运算输出切分数等于输入切分数，默认输出切分数=输入切分数*权重切分数
             cp=[[op['compute']/split,0]]
-            #print(cp,split)
+            #print(op['compute'],op['compute']/split)
             cm_size,cm_type,cm_hops=0,0,0
             sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute(i_params, o_params, w_params, cp,cm_size, cm_type,cm_hops)
             #print(sram_cap_req,total_cp_latency)
@@ -172,7 +174,6 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     if details:
         print('-'*40+'mapping_processing'+'-'*40)
     #1
-    
     if QKV_fusion:
         ops["QKV_fusion"] =model.gen_gemm("QKV_fusion",[model.config["B"], model.config["S"], model.config["H"],3*model.config["H"]])
         Tm_Tn=[256,8] if preset else None
@@ -203,10 +204,8 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     mapping_result['Linear']=gemm_auto_opt_mapper(ops['Linear'],arch,details=details)
     mapping_result['RMSNorm2']=vector_mapper(ops['RMSNorm2'],arch,splits=None,details=details)
     mapping_result['ResAdd']=vector_mapper(ops['ResAdd'],arch,splits=None,details=details)
-
     #3
-    
-    Tm_Tn=[32,256] if preset else None
+    Tm_Tn=None# [16,256] #if preset else None
     mapping_result['FFNup&SiLU']=gemm_auto_opt_mapper(ops['FFNup'],arch,Tm_Tn=Tm_Tn,fusion_op2=ops['SiLU'],details=details)
     del ops['SiLU']
     mapping_result['FFNgate']=gemm_auto_opt_mapper(ops['FFNgate'],arch,Tm_Tn=Tm_Tn,details=details)
@@ -234,7 +233,8 @@ def manual_mapper(model,arch,QKV_fusion=True,preset=True,details=True):
     return mapping_result 
 
 if __name__ == "__main__":
-    llm_config =load_config("./input/transformer/llama7b.json")
+    llm_config =load_config("./input/transformer/input0.json")
+    #llm_config =load_config("./input/transformer/llama7b.json")
     llama7b = tbk.Llama_block(llm_config)
     print(llama7b.config)
     tx8_config=load_config('hardware_parameter.json')

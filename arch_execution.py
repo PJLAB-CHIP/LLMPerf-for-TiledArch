@@ -83,7 +83,7 @@ class Tx8:
                     verification_flag = 0
                 else:
                     if i_params[0] + 2 * w_params[0] <= self.config["SRAM(MB)"]:
-                        print("输入不复用则SRAM满足要求")
+                        print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 2份权重 < SRAM大小)")
                         verification_flag = 1
                         verification_result = True
                     else:
@@ -97,7 +97,7 @@ class Tx8:
                 verification_flag = 0
             else:
                 if i_params[0] + 3 * w_params[0] + 2 * o_params[0] <= self.config["SRAM(MB)"]:
-                    print("输入不复用则SRAM满足要求")
+                    print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 3份权重 + 2份输出 < SRAM大小)")
                     verification_flag = 1
                     verification_result = True
                 else:
@@ -115,6 +115,7 @@ class Tx8:
         
         #一次的计算时间、通信时间和存储时间；cp_latency_per, cm_latency_per, dram_store_per
         cp_latency_per = self.Computation_latency(cp[0])#每一次的计算时间，单位ms
+        # print(cp_latency_per)
             
         cm_latency_per_noc, cm_latency_per_overlap = self.Communication_latency(cm_size, cm_type, cm_hops)
         cm_latency_per = cm_latency_per_noc + 0.001 * cm_latency_per_overlap#每一次的通信时间，单位为ms
@@ -163,6 +164,7 @@ class Tx8:
 
         
         total_cp_latency = n1 * cp_latency_cycle_in
+        # print(total_cp_latency)
         total_cm_latency = n1 * cm_latency_cycle_in
         total_dram_read = n1 * dram_read_cycle_in
         total_dram_store = n1 * dram_store_cycle_in
@@ -311,10 +313,9 @@ class Tx8:
         for i in range(len_cp):
             cpi = cp[i]
             if cpi[1] == 0:
-                w_cm_flag = 0
+                cp_latency_cycle[i] = cp_latency_per[i]
             else:
-                w_cm_flag = self.config["TILE_NUM"] - 1
-            cp_latency_cycle[i] = (w_cm_flag + 1) * cp_latency_per[i]#每一轮的计算时间
+                cp_latency_cycle[i] = self.config["TILE_NUM"] * cp_latency_per[i]#每一轮的计算时间
             #print(cp_latency_cycle[i])
             
         w_cm_flag = self.config["TILE_NUM"] - 1
@@ -427,11 +428,7 @@ class Tx8:
         #一轮的总用时latency_cycle
         cp_latency_cycle = [0 for _ in range(len_cp)]
         for i in range(len_cp):
-            cpi = cp[i]
-            if cpi[1] == 0:
-                w_cm_flag = 0
-            else:
-                w_cm_flag = self.config["TILE_NUM"] - 1
+            w_cm_flag = self.config["TILE_NUM"] - 1
             cp_latency_cycle[i] = (w_cm_flag + 1) * cp_latency_per[i]#每一轮的计算时间
             #print(cp_latency_cycle[i])
             
@@ -462,11 +459,9 @@ class Tx8:
         
         cp_latency_cycle_in = [0 for _ in range(len_cp)]
         for i in range(len_cp):
-            if i == 0:
-                cp_latency_cycle_in[i] = n2 * cp_latency_cycle[i]#每个算子每一个完整内层循环的计算时间
-            else:
-                cp_latency_cycle_in[i] = cp_latency_cycle[i]
-            #print(cp_latency_cycle_in[i])
+            cp_latency_cycle_in[i] = n2 * cp_latency_cycle[i]#每个算子每一个完整内层循环的计算时间
+
+            # print(cp_latency_cycle_in[i])
             
         cm_latency_cycle_in = n2 * cm_latency_cycle#每一个完整内层循环的通信时间
             
@@ -489,6 +484,7 @@ class Tx8:
         for i in range(len_cp):
             Each_cp_latency[i] = n1 * cp_latency_cycle_in[i]
             total_cp_latency = total_cp_latency + Each_cp_latency[i]
+        # print(Each_cp_latency)
             
         total_cm_latency = n1 * cm_latency_cycle_in#总通信时间
             
@@ -553,7 +549,7 @@ class Tx8:
             else:
                 w_cm_flag = self.config["TILE_NUM"] - 1
             cp_latency_cycle[i] = (w_cm_flag + 1) * cp_latency_per[i]#每一轮的计算时间
-            print(cp_latency_cycle[i])
+            #print(cp_latency_cycle[i])
             
         w_cm_flag = self.config["TILE_NUM"] - 1
         cm_latency_cycle = w_cm_flag * cm_latency_per#每一轮的通信时间；len_cp不为1时也只有一个算子（GEMM）进行通信
@@ -643,7 +639,8 @@ class Tx8:
         len_cp = len(cp)
         
         if len_cp == 1:#一个算子
-            if i_params[1] == o_params[1] == w_params[1]:
+            cp0 = cp[0]
+            if cp0[1] == 0:
                 mode = 10#一个RMSNorm算子/Vector算子
             else:
                 mode = 11#一个GEMM算子
@@ -711,6 +708,48 @@ class Tx8:
 if __name__ == "__main__":
     tx8_config = load_config("./hardware_parameter.json")
     arch = Tx8(tx8_config)
+    
+    
+    # #FFN检验
+    # print("FFN检验(2.885681152):")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.25, 128], [0.02099609375, 4096], [2.6875, 32], [[0.090177536, 1]], 2.6875, 0, 5)
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # # print("总通信时间:", total_cm_latency)
+    # # print("总访存时间:", total_DRAM)
+    # # print("总延迟:", latency)
+    # # print("利用率:", Utilization)
+    
+    # #FFN与SiLU融合检验
+    # print("FFN与SiLU融合检验:")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.0625, 512], [0.000244140625, 352256], [0.125, 688], [[0.001048576, 1], [5.12e-07, 0]], 0.125, 0, 5)
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # # print("总通信时间:", total_cm_latency)
+    # # print("总访存时间:", total_DRAM)
+    # # print("总延迟:", latency)
+    # # print("利用率:", Utilization)
+    
+    # #单FFN检验
+    # print("单FFN检验:")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.0625, 512], [0.000244140625, 352256], [0.125, 688], [[0.001048576, 1]], 0.125, 0, 5)
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # # print("总通信时间:", total_cm_latency)
+    # # print("总访存时间:", total_DRAM)
+    # # print("总延迟:", latency)
+    # # print("利用率:", Utilization)
+    
+    # #单SiLU检验
+    # print("单SiLU检验:")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.0625, 352256], [0.000244140625, 352256], [0.125, 688], [[5.12e-07, 0]], 0.125, 0, 5)
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # # print("总通信时间:", total_cm_latency)
+    # # print("总访存时间:", total_DRAM)
+    # # print("总延迟:", latency)
+    # # print("利用率:", Utilization)
+    
     
 
 # # 创建Tx8类的实例
