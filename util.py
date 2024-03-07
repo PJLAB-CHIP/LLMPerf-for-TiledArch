@@ -3,20 +3,14 @@ import json
 import pandas as pd
 import math
 from typing import Union
-
-
 TB=1024**4
 GB=1024**3
 MB=1024**2
 KB=1024
-
 T=1000**4
 G=1000**3
 M=1000**2
 K=1000
-
-
-
 def load_config(input_path):
     # 读取json配置文件
     with open(input_path, 'r') as file:
@@ -29,6 +23,8 @@ def save_file(data, file_path):
     # 将DataFrame保存到Excel中，index参数用于指定是否包含行索引
     df.to_excel(file_path, index=False)
 def MBytes(list0,bytes=2):
+    if list0==None or list0==0:
+        return 0
     #List 维度乘积
     res=1 
     for i in list0:
@@ -51,13 +47,13 @@ def block_range(dim,min_block=1,max_block=2048):
     sqrt_n = int(math.sqrt(dim))
     for i in range(1, sqrt_n + 1):
         if dim % i == 0 :
-            if i >= min_block and i <= max_block:
+            if i % min_block ==0 and i <= max_block:
                 factors.append(i)
             if i != dim // i:
-                if dim // i >= min_block and dim // i <= max_block:
+                if dim // i % min_block ==0 and dim // i <= max_block:
                     factors.append(dim // i)
     #factors.sort()  # 如果要排序因子列表，请取消注释此行
     return factors
 
 if __name__ == "__main__":
-    print(block_range(4096,min_block=16,max_block=1024))
+    print(block_range(11008,min_block=16,max_block=1024))
