@@ -42,7 +42,9 @@ def dim_analysis(optype,dims,para_dims):
         o_shape=[math.ceil(new_shape[0]),math.ceil(new_shape[1]),math.ceil(new_shape[3])]
         return new_shape,i_shape,o_shape,w_shape,reduce
 
-def block_range(dim,min_block=1,max_block=2048):
+def block_range(dim,min_block=1,max_block=None):
+    if max_block==None:
+        max_block=dim
     factors = []
     sqrt_n = int(math.sqrt(dim))
     for i in range(1, sqrt_n + 1):
@@ -52,8 +54,7 @@ def block_range(dim,min_block=1,max_block=2048):
             if i != dim // i:
                 if dim // i % min_block ==0 and dim // i <= max_block:
                     factors.append(dim // i)
-    #factors.sort()  # 如果要排序因子列表，请取消注释此行
     return factors
 
 if __name__ == "__main__":
-    print(block_range(11008,min_block=16,max_block=1024))
+    print(block_range(11008,min_block=16))
