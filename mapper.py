@@ -37,7 +37,7 @@ def gemm_auto_opt_mapper(op,arch,Tm_Tn=None,fusion_op1=None,fusion_op2=None,deta
                 #print(Tm_Tn,dims,Nm,Nn,Nk)
         else:
             Nm=block_range(dims[1],min_block=tile_num)
-            Nk=block_range(dims[2])
+            Nk=[1]#block_range(dims[2])
             Nn=block_range(dims[3],min_block=tile_num)
         for nk in Nk:
             for nm in Nm:
