@@ -21,6 +21,7 @@ def gemm_auto_opt_mapper(op,arch,Tm_Tn=None,fusion_op1=None,fusion_op2=None,deta
     best_parall=[]
     best_latency=[]
     best_stationary=None
+    total_cp_latency = 0
     for stationary in ['input','weight']:
         if stationary=='input':
             dims=op['ishape']+[op['wshape'][-1]]#[b,m,k,n]输入维度为[b,m,k] 权重维度为[k,n] 输出维度为[b,m,n]
@@ -165,6 +166,7 @@ def vector_mapper(op,arch,splits=None,details=False):
     max_utilization = 0
     best_split = []
     best_latency = []
+    total_cp_latency = 0
     for split in splits:
             i_params=[MBytes(io_shape)/split,split]
             o_params=[MBytes(io_shape)/split,split]
