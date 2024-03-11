@@ -39,13 +39,12 @@ def gemm_auto_opt_mapper(op,arch,Tm_Tn=None,fusion_op1=None,fusion_op2=None,deta
             Nm=block_range(dims[1],min_block=tile_num)
             Nk=block_range(dims[2])
             Nn=block_range(dims[3],min_block=tile_num)
-            print(Nm,Nk,Nn)
         for nk in Nk:
             for nm in Nm:
                 for nn in Nn:
                     cur_gemm_parall=[1,nm,nk,nn]
                     cp=[]
-                    newdims,ishape,oshape,wshape,reduce=dim_analysis('GEMM',dims,cur_gemm_parall,dim_factor=tile_num)
+                    newdims,ishape,oshape,wshape,reduce=dim_analysis('GEMM',dims,cur_gemm_parall)
                     #print(newshape)
                     i_size,w_size,o_size=MBytes(ishape),MBytes(wshape),MBytes(oshape)
                     if fusion_op1!=None:
