@@ -4,7 +4,7 @@ from util import *
 import math
 # fusion_op 表示gemm算子与vector算子融合
 # 算力10进制，存储二进制表示
-def gemm_auto_opt_mapper(op,arch,Tm_Tn=None,fusion_op1=None,fusion_op2=None,details=False):
+def gemm_auto_opt_mapper(op,arch,TmTnTk=None,fusion_op1=None,fusion_op2=None,details=False):
     '''gemm算子映射切分策略搜索,默认input_stationary'''
     # i_params = [i_size, nm,nk] i_size为一份输入的大小，单位为MB；nm*nk为输入的总份数
     # o_params = [o_size, nn*nm] o_size为一份输出的大小，单位为MB；nn*nm为输出的总份数
@@ -26,15 +26,16 @@ def gemm_auto_opt_mapper(op,arch,Tm_Tn=None,fusion_op1=None,fusion_op2=None,deta
         else:
             dims=[1,op['wshape'][1],op['wshape'][0],op['ishape'][0]*op['ishape'][1]]#[1,n,k,b*m]输入维度为[1,n,k] 权重维度为[k,b*m] 输出维度为[1,n,b*m]
             #print(dims)
-        dims=dim_norm(dims,factor=16)
         tile_num=arch.config['TILE_NUM']
-        if Tm_Tn!=None:
+        dims=[dims[0]]+dim_norm(dims[1:],factor=tile_num)
+        print(dims)
+        if TmTnTk!=None:
             if stationary=='input':
-                Nm,Nn,Nk=[math.ceil(dims[0]*dims[1]/Tm_Tn[0])],[math.ceil(dims[3]/Tm_Tn[1])],[1]
-                #print(Tm_Tn,dims,Nm,Nn,Nk)
+                Nm,Nn,Nk=[math.ceil(dims[0]*dims[1]/TmTnTk[0])],[math.ceil(dims[3]/TmTnTk[1])],[math.ceil(dims[2]/TmTnTk[2])] if len(TmTnTk)==3 else [1]
+                #print(TmTnTk,dims,Nm,Nn,Nk)
             else:
-                Nm,Nn,Nk=[math.ceil(dims[0]*dims[1]/Tm_Tn[1])],[math.ceil(dims[3]/Tm_Tn[0])],[1]
-                #print(Tm_Tn,dims,Nm,Nn,Nk)
+                Nm,Nn,Nk=[math.ceil(dims[0]*dims[1]/TmTnTk[1])],[math.ceil(dims[3]/TmTnTk[0])],[math.ceil(dims[2]/TmTnTk[2])] if len(TmTnTk)==3 else [1]
+                #print(TmTnTk,dims,Nm,Nn,Nk)
         else:
             Nm=block_range(dims[1],min_block=tile_num)
             Nk=[1]#block_range(dims[2])
@@ -191,25 +192,26 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
     if details:
         print('-'*40+'mapping_processing'+'-'*40)
     #1
+    '''
     if QKV_fusion:
         ops["QKV_fusion"] = model.gen_gemm("QKV_fusion", [
                                            model.config["B"], model.config["S"], model.config["H"], 3*model.config["H"]])
-        Tm_Tn = [256, 8] if preset else None
-        # mapping_result['QKV_fusion']=gemm_auto_opt_mapper(ops['QKV_fusion'],arch,Tm_Tn=Tm_Tn,fusion_op1=None,details=details)
+        TmTnTk = [256, 8] if preset else None
+        # mapping_result['QKV_fusion']=gemm_auto_opt_mapper(ops['QKV_fusion'],arch,TmTnTk=TmTnTk,fusion_op1=None,details=details)
         mapping_result['QKV_fusion'] = gemm_auto_opt_mapper(
-            ops['QKV_fusion'], arch, Tm_Tn=Tm_Tn, fusion_op1=ops['RMSNorm'], details=details)
+            ops['QKV_fusion'], arch, TmTnTk=TmTnTk, fusion_op1=ops['RMSNorm'], details=details)
         del ops['Q_proj']
         del ops['K_proj']
         del ops['V_proj']
         del ops['RMSNorm']
     else:
-        Tm_Tn = [256, 32] if preset else None
+        TmTnTk = [256, 32] if preset else None
         mapping_result['RMSNorm&Q_proj'] = gemm_auto_opt_mapper(
-            ops['Q_proj'], arch, Tm_Tn=Tm_Tn, fusion_op1=ops['RMSNorm'], details=details)
+            ops['Q_proj'], arch, TmTnTk=TmTnTk, fusion_op1=ops['RMSNorm'], details=details)
         mapping_result['K_proj'] = gemm_auto_opt_mapper(
-            ops['K_proj'], arch, Tm_Tn=Tm_Tn, details=details)
+            ops['K_proj'], arch, TmTnTk=TmTnTk, details=details)
         mapping_result['V_proj'] = gemm_auto_opt_mapper(
-            ops['V_proj'], arch, Tm_Tn=Tm_Tn, details=details)
+            ops['V_proj'], arch, TmTnTk=TmTnTk, details=details)
         del ops['RMSNorm']
         del ops['Q_proj']
 
@@ -224,24 +226,26 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
     del ops['QK^T']
     del ops['Softmax']
     del ops['AV']
+    '''
     mapping_result['Linear']=gemm_auto_opt_mapper(ops['Linear'],arch,details=details)
+    '''
     mapping_result['RMSNorm2']=vector_mapper(ops['RMSNorm2'],arch,splits=None,details=details)
     mapping_result['ResAdd']=vector_mapper(ops['ResAdd'],arch,splits=None,details=details)
     #3
-    Tm_Tn=None# [16,256] #if preset else None
-    mapping_result['FFNup&SiLU']=gemm_auto_opt_mapper(ops['FFNup'],arch,Tm_Tn=Tm_Tn,fusion_op2=ops['SiLU'],details=details)
+    TmTnTk=None# [16,256] #if preset else None
+    mapping_result['FFNup&SiLU']=gemm_auto_opt_mapper(ops['FFNup'],arch,TmTnTk=TmTnTk,fusion_op2=ops['SiLU'],details=details)
     del ops['SiLU']
     mapping_result['FFNgate'] = gemm_auto_opt_mapper(
-        ops['FFNgate'], arch, Tm_Tn=Tm_Tn, details=details)
+        ops['FFNgate'], arch, TmTnTk=TmTnTk, details=details)
     mapping_result['Hadamard'] = vector_mapper(
         ops['Hadamard'], arch, splits=None)
 
-    Tm_Tn = [4, 128] if preset else None
+    TmTnTk = [4, 128] if preset else None
     mapping_result['FFNdown'] = gemm_auto_opt_mapper(
-        ops['FFNdown'], arch, Tm_Tn=Tm_Tn, details=details)
+        ops['FFNdown'], arch, TmTnTk=TmTnTk, details=details)
     mapping_result['ResAdd2'] = vector_mapper(
         ops['ResAdd2'], arch, splits=None, details=details)
-
+    '''
     print('-'*40+'mapping_result'+'-'*40)
     tot_latency = 0
     tot_cp_latency = 0
@@ -273,4 +277,4 @@ if __name__ == "__main__":
     print(hardware.config)
     # preset 是否使用预设切分;details是否打印映射的详细信息
     mapping_result = manual_mapper(
-        llama7b, hardware, preset=False, details=True)
+        llama7b, hardware, preset=True, details=True)
