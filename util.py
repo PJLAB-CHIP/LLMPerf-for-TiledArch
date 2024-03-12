@@ -31,18 +31,26 @@ def MBytes(list0,bytes=2):
         res*=i
     return res/1024/1024*bytes
 
+def min_multiple_of(num,factor=16):
+    return math.ceil(num/factor)*factor
+def dim_norm(dims,tile_num=16):
+    #将维度规则到tile_num的倍数
+    newdims=[]
+    for dim in dims:
+        newdims.append(min_multiple_of(dim,tile_num))
+    return newdims
 def dim_analysis(optype,dims,para_dims):
-    #print(dims)
-    #print(para_dims)
+    #将gemm矩阵维度按并行切分度重新计算数据shape
     if optype=='GEMM':#[b,m,k,n]
         reduce=True if para_dims[2]>1 else False
-        new_shape=[dims[0]/para_dims[0],dims[1]/para_dims[1],dims[2]/para_dims[2],dims[3]/para_dims[3]]
-        i_shape=[math.ceil(new_shape[0]),math.ceil(new_shape[1]),math.ceil(new_shape[2])]
-        w_shape=[math.ceil(new_shape[2]),math.ceil(new_shape[3])]
-        o_shape=[math.ceil(new_shape[0]),math.ceil(new_shape[1]),math.ceil(new_shape[3])]
-        return new_shape,i_shape,o_shape,w_shape,reduce
+        newdims=[math.ceil(dims[0]/para_dims[0]),math.ceil(dims[1]/para_dims[1]),math.ceil(dims[2]/para_dims[2]),math.ceil(dims[3]/para_dims[3])]
+        i_shape=[math.ceil(newdims[0]),math.ceil(newdims[1]),math.ceil(newdims[2])]
+        w_shape=[math.ceil(newdims[2]),math.ceil(newdims[3])]
+        o_shape=[math.ceil(newdims[0]),math.ceil(newdims[1]),math.ceil(newdims[3])]
+        return newdims,i_shape,o_shape,w_shape,reduce
 
 def block_range(dim,min_block=1,max_block=None):
+    #遍历dim可以因式分解的所有公因子，满足大于等于min_block，且为min_block的倍数，且小于等于max_block
     if max_block==None:
         max_block=dim
     factors = []
@@ -57,4 +65,8 @@ def block_range(dim,min_block=1,max_block=None):
     return factors
 
 if __name__ == "__main__":
-    print(block_range(11008,min_block=16))
+    new_dims=dim_norm([16,4096,5,511],factor=16)
+    print(new_dims)
+    for dim in new_dims:
+        print(block_range(dim,min_block=16))
+    print(dim_analysis('GEMM',new_dims,[1,128,64,256]))
