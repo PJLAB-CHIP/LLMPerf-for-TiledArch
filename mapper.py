@@ -27,7 +27,7 @@ def gemm_auto_opt_mapper(op,arch,TmTnTk=None,fusion_op1=None,fusion_op2=None,det
             dims=[1,op['wshape'][1],op['wshape'][0],op['ishape'][0]*op['ishape'][1]]#[1,n,k,b*m]输入维度为[1,n,k] 权重维度为[k,b*m] 输出维度为[1,n,b*m]
             #print(dims)
         tile_num=arch.config['TILE_NUM']
-        dims=[dims[0]]+dim_norm(dims[1:],factor=tile_num)
+        dims=[dims[0]]+dim_norm(dims[1:],tile_num=tile_num)
         print(dims)
         if TmTnTk!=None:
             if stationary=='input':
@@ -38,7 +38,7 @@ def gemm_auto_opt_mapper(op,arch,TmTnTk=None,fusion_op1=None,fusion_op2=None,det
                 #print(TmTnTk,dims,Nm,Nn,Nk)
         else:
             Nm=block_range(dims[1],min_block=tile_num)
-            Nk=[1]#block_range(dims[2])
+            Nk=block_range(dims[2])
             Nn=block_range(dims[3],min_block=tile_num)
         for nk in Nk:
             for nm in Nm:
@@ -62,7 +62,7 @@ def gemm_auto_opt_mapper(op,arch,TmTnTk=None,fusion_op1=None,fusion_op2=None,det
                     o_params=[o_size,nm*nn]
                     cm_size,cm_type,cm_hops=w_params[0],0,5
                     #print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
-                    sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
+                    sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops,details)
                     #print(arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops))
                     #print("total_cp_latency",total_cp_latency)
                     if tot_utilization>max_utilization and sram_cap_req:
@@ -125,7 +125,7 @@ def flashatten_mapper(model, arch, Tx_Ty=None, details=True, Head_fused=True):
             cm_size, cm_type, cm_hops = w_params[0], 0, 1
             # print('test',i_params,o_params,w_params,cp,cm_size,cm_type,cm_hops)
             sram_cap_req, total_cp_latency, _, _, tot_latency, tot_utilization = arch.execute(
-                i_params, o_params, w_params, cp,  cm_size, cm_type, cm_hops)
+                i_params, o_params, w_params, cp,  cm_size, cm_type, cm_hops,details)
             # print('data',sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization)
             if tot_utilization > max_utilization and sram_cap_req:
                 max_utilization = tot_utilization
@@ -171,7 +171,7 @@ def vector_mapper(op,arch,splits=None,details=False):
             cp=[[op['compute']/split,0]]
             #print(op['compute'],op['compute']/split)
             cm_size,cm_type,cm_hops=0,0,0
-            sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute(i_params, o_params, w_params, cp,cm_size, cm_type,cm_hops)
+            sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute(i_params, o_params, w_params, cp,cm_size, cm_type,cm_hops,details)
             #print(sram_cap_req,total_cp_latency)
             if tot_utilization>max_utilization and sram_cap_req:
                 max_utilization=tot_utilization
@@ -192,7 +192,6 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
     if details:
         print('-'*40+'mapping_processing'+'-'*40)
     #1
-    '''
     if QKV_fusion:
         ops["QKV_fusion"] = model.gen_gemm("QKV_fusion", [
                                            model.config["B"], model.config["S"], model.config["H"], 3*model.config["H"]])
@@ -214,21 +213,21 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
             ops['V_proj'], arch, TmTnTk=TmTnTk, details=details)
         del ops['RMSNorm']
         del ops['Q_proj']
-
+    
     # 2
 
     Tx_Ty = [256, 256] if preset else None  # wanghuizheng
     mapping_result['Flashatten'] = flashatten_mapper(
         model, arch, Tx_Ty=Tx_Ty, details=details, Head_fused=True)
-
+    
     del ops['RoPE(Q)']
     del ops['RoPE(K)']
     del ops['QK^T']
     del ops['Softmax']
     del ops['AV']
-    '''
+    
     mapping_result['Linear']=gemm_auto_opt_mapper(ops['Linear'],arch,details=details)
-    '''
+    
     mapping_result['RMSNorm2']=vector_mapper(ops['RMSNorm2'],arch,splits=None,details=details)
     mapping_result['ResAdd']=vector_mapper(ops['ResAdd'],arch,splits=None,details=details)
     #3
@@ -245,7 +244,7 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
         ops['FFNdown'], arch, TmTnTk=TmTnTk, details=details)
     mapping_result['ResAdd2'] = vector_mapper(
         ops['ResAdd2'], arch, splits=None, details=details)
-    '''
+   
     print('-'*40+'mapping_result'+'-'*40)
     tot_latency = 0
     tot_cp_latency = 0
@@ -260,7 +259,7 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
         except:
             print('{:<15}, No suitable mapping result! '.format(key))
     mapping_result['Total'] = {
-        "latency": tot_latency, 'utilization': tot_cp_latency/tot_latency, 'cp_latency': tot_cp_latency}
+        "latency": tot_latency, 'utilization': tot_cp_latency/tot_latency if tot_latency!=0 else 0, 'cp_latency': tot_cp_latency}
     print('{:<15}, latency(ms)={:>10.6f}, utilization(%)={:>10.6f}, compute latency(ms)={:>10.6f}'.format(
         'Total Layers', tot_latency*Layers, tot_cp_latency/tot_latency*100, tot_cp_latency*Layers))
 
@@ -277,4 +276,4 @@ if __name__ == "__main__":
     print(hardware.config)
     # preset 是否使用预设切分;details是否打印映射的详细信息
     mapping_result = manual_mapper(
-        llama7b, hardware, preset=True, details=True)
+        llama7b, hardware, preset=False, details=True)
