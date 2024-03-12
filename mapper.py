@@ -28,7 +28,7 @@ def gemm_auto_opt_mapper(op,arch,TmTnTk=None,fusion_op1=None,fusion_op2=None,det
             #print(dims)
         tile_num=arch.config['TILE_NUM']
         dims=[dims[0]]+dim_norm(dims[1:],tile_num=tile_num)
-        print(dims)
+        #print(dims)
         if TmTnTk!=None:
             if stationary=='input':
                 Nm,Nn,Nk=[math.ceil(dims[0]*dims[1]/TmTnTk[0])],[math.ceil(dims[3]/TmTnTk[1])],[math.ceil(dims[2]/TmTnTk[2])] if len(TmTnTk)==3 else [1]
@@ -249,6 +249,7 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
     tot_latency = 0
     tot_cp_latency = 0
     tot_utilization = 0
+    utilization=0
     for key, item in mapping_result.items():
         try:
             tot_latency += item['latency']
@@ -258,8 +259,9 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
                 key, item['latency'], item['utilization']*100, item['cp_latency']))
         except:
             print('{:<15}, No suitable mapping result! '.format(key))
+    utilization=tot_cp_latency/(tot_latency+1e-35)
     mapping_result['Total'] = {
-        "latency": tot_latency, 'utilization': tot_cp_latency/tot_latency if tot_latency!=0 else 0, 'cp_latency': tot_cp_latency}
+        "latency": tot_latency, 'utilization':utilization , 'cp_latency': tot_cp_latency}
     print('{:<15}, latency(ms)={:>10.6f}, utilization(%)={:>10.6f}, compute latency(ms)={:>10.6f}'.format(
         'Total Layers', tot_latency*Layers, tot_cp_latency/tot_latency*100, tot_cp_latency*Layers))
 
@@ -276,4 +278,4 @@ if __name__ == "__main__":
     print(hardware.config)
     # preset 是否使用预设切分;details是否打印映射的详细信息
     mapping_result = manual_mapper(
-        llama7b, hardware, preset=False, details=True)
+        llama7b, hardware, preset=False, details=False)
