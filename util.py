@@ -33,12 +33,14 @@ def MBytes(list0,bytes=2):
 
 def min_multiple_of(num,factor=16):
     return math.ceil(num/factor)*factor
-def dim_norm(dims,factor=16):
+def dim_norm(dims,tile_num=16):
+    #将维度规则到tile_num的倍数
     newdims=[]
     for dim in dims:
-        newdims.append(min_multiple_of(dim,factor))
+        newdims.append(min_multiple_of(dim,tile_num))
     return newdims
 def dim_analysis(optype,dims,para_dims):
+    #将gemm矩阵维度按并行切分度重新计算数据shape
     if optype=='GEMM':#[b,m,k,n]
         reduce=True if para_dims[2]>1 else False
         newdims=[math.ceil(dims[0]/para_dims[0]),math.ceil(dims[1]/para_dims[1]),math.ceil(dims[2]/para_dims[2]),math.ceil(dims[3]/para_dims[3])]
@@ -48,6 +50,7 @@ def dim_analysis(optype,dims,para_dims):
         return newdims,i_shape,o_shape,w_shape,reduce
 
 def block_range(dim,min_block=1,max_block=None):
+    #遍历dim可以因式分解的所有公因子，满足大于等于min_block，且为min_block的倍数，且小于等于max_block
     if max_block==None:
         max_block=dim
     factors = []
