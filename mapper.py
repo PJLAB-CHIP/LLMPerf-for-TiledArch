@@ -43,6 +43,7 @@ def gemm_auto_opt_mapper(op,arch,TmTnTk=None,fusion_op1=None,fusion_op2=None,det
         for nk in Nk:
             for nm in Nm:
                 for nn in Nn:
+                    nk=1
                     cur_gemm_parall=[1,nm,nk,nn]
                     cp=[]
                     newdims,ishape,oshape,wshape,reduce=dim_analysis('GEMM',dims,cur_gemm_parall)
@@ -83,7 +84,7 @@ def flashatten_mapper(model, arch, Tx_Ty=None, details=True, Head_fused=True):
     # Head_fused 表示是否多头输入Q预加载优化
     config = model.config
     dims = [config['B'], config['S'], int(
-        config['H']/config['A']), config['A']]
+        config['H_A']/config['N_A']), config['N_A']]
     # print("config['A']",config['A'])
     Tx = block_range(dims[1], min_block=1,
                      max_block=dims[1]//arch.config['TILE_NUM'])
@@ -101,9 +102,9 @@ def flashatten_mapper(model, arch, Tx_Ty=None, details=True, Head_fused=True):
         for ty in Ty:
             current_tx_ty = [tx, ty]
             Q_RoPE_wsize = model.config['Q']//8*tx * \
-                model.config['H']//model.config['A']/MB
+                model.config['H_A']//model.config['N_A']/MB
             K_RoPE_wsize = model.config['Q']//8*ty * \
-                model.config['H']//model.config['A']/MB
+                model.config['H_A']//model.config['N_A']/MB
             if Head_fused:
                 head = dims[3]
             else:
@@ -114,9 +115,9 @@ def flashatten_mapper(model, arch, Tx_Ty=None, details=True, Head_fused=True):
                         head*math.ceil(dims[1]//tx)]
             w_params = [2*MBytes([dims[0], ty, dims[2]]) +
                         K_RoPE_wsize, math.ceil(dims[1]//ty)]  # K+V
-            vector_cp_size = model.config['B']*tx*model.config['H']//model.config['A'] + \
+            vector_cp_size = model.config['B']*tx*model.config['H_A']//model.config['N_A'] + \
                 model.config['B']*ty * \
-                model.config['H']//model.config['A']  # RoPE
+                model.config['H_A']//model.config['N_A']  # RoPE
             flash_vector_cp_size = 5*tx*ty  # *dims[2]
             # cp=[[2*2*tx*ty*dims[2]/G,1]]
             # cp=[[0,0],[2*2*tx*ty*dims[2]/G,1],[0,0]]
@@ -195,7 +196,7 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
     #1
     if QKV_fusion:
         ops["QKV_fusion"] = model.gen_gemm("QKV_fusion", [
-                                           model.config["B"], model.config["S"], model.config["H"], 3*model.config["H"]])
+                                           model.config["B"], model.config["S"], model.config["D_QKV"], 3*model.config["H_QKV"]])
         TmTnTk = [256, 8] if preset else None
         # mapping_result['QKV_fusion']=gemm_auto_opt_mapper(ops['QKV_fusion'],arch,TmTnTk=TmTnTk,fusion_op1=None,details=details)
         mapping_result['QKV_fusion'] = gemm_auto_opt_mapper(
