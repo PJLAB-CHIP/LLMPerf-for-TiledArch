@@ -27,10 +27,10 @@ class Tx8:
     
     def __init__(self, config) -> None:
         self.config = config
-    def execute(self, i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops):
-        # i_params = [i_size, i_flag] i_size为一份输入的大小，单位为MB；i_flag为输入的总份数，例如16/32/64等
+    def execute(self, i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops, details):
+        # i_params = [i_size, i_flag, split_k] i_size为一份输入的大小，单位为MB；i_flag为输入的总份数，例如16/32/64等
         # o_params = [o_size, o_flag] o_size为一份输出的大小，单位为MB；i_flag为输入的总份数，例如16/32/64等; 对于GEMM，o_flag = i_flag * w_flag; 对于FLashAttention，确保i_flag = o_flag必须要满足这两种情况
-        # w_params = [w_size, w_flag] w_size为一份输出的大小，单位为MB；w_flag为输出的总份数，例如16/32/64等
+        # w_params = [w_size, w_flag, split_k] w_size为一份输出的大小，单位为MB；w_flag为输出的总份数，例如16/32/64等
         # cp = [cp0, cp1]，其中cp0 = [cp_size0, cp_type0]; cp_size为计算量，单位为GFLOPs; cp_type为计算类型, 这里认为0为Vector，1为Gemm
         # cm_size为通信量大小，单位MB
         # cm_type
@@ -48,7 +48,7 @@ class Tx8:
         #print(cp)
         
         
-        verification_result, verification_flag = self.verification(i_params, o_params, w_params)#要求(1)是否可以计算;True or False
+        verification_result, verification_flag = self.verification(i_params, o_params, w_params, cp, details)#要求(1)是否可以计算;True or False
         
         Mode = self.Mode(i_params, o_params, w_params, cp)#判断是哪种模式；10代表一个Vector算子，11代表一个GEMM算子，21代表先Vector后GEMM，22代表先GEMM后Vector，31代表flash-attention
         
@@ -66,9 +66,16 @@ class Tx8:
         
         return verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization
     
-    def verification(self, i_params, o_params, w_params):
+    def verification(self, i_params, o_params, w_params, cp, details):
     # 该函数用于验证SRAM是否够用。如果切分数量小于等于16，则不需要遵循SRAM的2-3-2分配策略（2输入，3权重，2输出） 
         o_flag = o_params[1]
+        cp0 = cp[0]
+        
+        if len(cp) == 1 and cp0[1] == 1:
+            assert i_params[2] == w_params[2]
+            split_k = i_params[2]
+        else:
+            split_k = 1
         
         if i_params[1] == o_flag == w_params[1]:#Vector算子情况，如RMSNorm
             if i_params[1] <= self.config["TILE_NUM"]:
@@ -83,7 +90,8 @@ class Tx8:
                     verification_flag = 0
                 else:
                     if i_params[0] + 2 * w_params[0] <= self.config["SRAM(MB)"]:
-                        print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 2份权重 < SRAM大小)")
+                        if details:
+                            print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 2份权重 < SRAM大小)")
                         verification_flag = 1
                         verification_result = True
                     else:
@@ -91,18 +99,40 @@ class Tx8:
                         verification_flag = 0
 
         else:
-
-            if 2 * i_params[0] + 3 * w_params[0] + 2 * o_params[0] <= self.config["SRAM(MB)"]:
-                verification_result = True
-                verification_flag = 0
-            else:
-                if i_params[0] + 3 * w_params[0] + 2 * o_params[0] <= self.config["SRAM(MB)"]:
-                    print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 3份权重 + 2份输出 < SRAM大小)")
-                    verification_flag = 1
+            if split_k == 1:
+                if 2 * i_params[0] + 3 * w_params[0] + 2 * o_params[0] <= self.config["SRAM(MB)"]:
                     verification_result = True
-                else:
-                    verification_result = False
                     verification_flag = 0
+                else:
+                    if i_params[1] == 16:
+                        if i_params[0] + 3 * w_params[0] + 2 * o_params[0] <= self.config["SRAM(MB)"]:
+                            verification_flag = 0
+                            verification_result = True
+                        else:
+                            verification_result = False
+                            verification_flag = 0
+                    else:
+                        if i_params[0] + 3 * w_params[0] + 2 * o_params[0] <= self.config["SRAM(MB)"]:
+                            if details:
+                                print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 3份权重 + 2份输出 < SRAM大小)")
+                            verification_flag = 1
+                            verification_result = True
+                        else:
+                            verification_result = False
+                            verification_flag = 0
+            else:
+                if 2 * i_params[0] + 3 * w_params[0] + 3 * o_params[0] <= self.config["SRAM(MB)"]:
+                    verification_result = True
+                    verification_flag = 0
+                else:
+                    if i_params[0] + 3 * w_params[0] + 3 * o_params[0] <= self.config["SRAM(MB)"]:
+                        if details:
+                            print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 3份权重 + 2份输出 < SRAM大小)")
+                        verification_flag = 1
+                        verification_result = True
+                    else:
+                        verification_result = False
+                        verification_flag = 0
 
         return verification_result, verification_flag
     
@@ -112,6 +142,8 @@ class Tx8:
         local_next = 0
         len_cp = len(cp)
         
+
+        split_k = 1
         
         #一次的计算时间、通信时间和存储时间；cp_latency_per, cm_latency_per, dram_store_per
         cp_latency_per = self.Computation_latency(cp[0])#每一次的计算时间，单位ms
@@ -146,6 +178,8 @@ class Tx8:
         else:
             time_one_iter_in = input_load_time + cm_latency_per
         
+        partial_sum_load_time = dram_store_cycle
+        time_one_iter_k = max(input_load_time + partial_sum_load_time, time_one_noc_pipe_flow)        
         
         #内层循环n2
         n2 = 1
@@ -163,20 +197,21 @@ class Tx8:
         n1 = int(math.ceil(i_params[1]/self.config["TILE_NUM"]))
 
         
-        total_cp_latency = n1 * cp_latency_cycle_in
+        total_cp_latency = n1 * cp_latency_cycle_in * split_k
         # print(total_cp_latency)
-        total_cm_latency = n1 * cm_latency_cycle_in
-        total_dram_read = n1 * dram_read_cycle_in
-        total_dram_store = n1 * dram_store_cycle_in
+        total_cm_latency = n1 * cm_latency_cycle_in * split_k
+        total_dram_read = n1 * dram_read_cycle_in * split_k
+        total_dram_store = n1 * dram_store_cycle_in * split_k
         
-        total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time
+        total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time * split_k
         
         initial_load_time = input_load_time + dram_read_cycle
-        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1
+        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1 * split_k
         iter_over_input_time = (n1 - 1) * time_one_iter_in
+        iter_over_splitk_time = n1 * (split_k - 1) * time_one_iter_k
         last_iter_time = time_one_noc_pipe_flow
-        if iter_over_weight_time + iter_over_input_time + last_iter_time >= total_cp_latency:
-            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
+        if iter_over_weight_time + iter_over_input_time + last_iter_time + iter_over_splitk_time >= total_cp_latency:
+            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + iter_over_splitk_time + last_iter_time + dram_store_per
         else:
             latency = initial_load_time + total_cp_latency + dram_store_per
         # latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
@@ -189,6 +224,9 @@ class Tx8:
         local_last = 0
         local_next = 0
         len_cp = len(cp)
+        
+        assert i_params[2] == w_params[2]
+        split_k = i_params[2]
         
         # if i_params[1] > w_params[1]:#权重驻留的情况
         #     self.swap_values(i_params, w_params)
@@ -233,6 +271,10 @@ class Tx8:
         
         # print(time_one_iter_in,input_load_time,time_one_noc_pipe_flow,cm_latency_per)
         
+        partial_sum_load_time = dram_store_cycle
+        time_one_iter_k = max(input_load_time + partial_sum_load_time, time_one_noc_pipe_flow)
+        # print(time_one_iter_k, input_load_time,partial_sum_load_time,time_one_noc_pipe_flow)
+        
         
         # #内层循环n2
         # if i_params[1] <= w_params[1]:#输入驻留
@@ -260,26 +302,31 @@ class Tx8:
         #     n1 = int(math.ceil(w_params[1]/self.config["TILE_NUM"]))
         n1 = int(math.ceil(i_params[1]/self.config["TILE_NUM"]))
         
-        total_cp_latency = n1 * cp_latency_cycle_in
-        total_cm_latency = n1 * cm_latency_cycle_in
-        total_dram_read = n1 * dram_read_cycle_in
-        total_dram_store = n1 * dram_store_cycle_in
+        total_cp_latency = n1 * cp_latency_cycle_in * split_k
+        total_cm_latency = n1 * cm_latency_cycle_in * split_k
+        total_dram_read = n1 * dram_read_cycle_in * split_k
+        total_dram_store = n1 * dram_store_cycle_in * split_k
         # print(n1,n2,cp_latency_cycle_in,cp_latency_cycle,cp_latency_per)
         # print(i_params[1])
         # print(n2,n1)
         
-        total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time
+        total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time * split_k
         
-        initial_load_time = input_load_time + dram_read_cycle
-        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1
-        # print(time_one_iter_w,iter_over_weight_time)
-        iter_over_input_time = (n1 - 1) * time_one_iter_in
-        last_iter_time = time_one_noc_pipe_flow
-        if iter_over_weight_time + iter_over_input_time + last_iter_time >= total_cp_latency:
-            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
-        else:
-            latency = initial_load_time + total_cp_latency + dram_store_per
+        if split_k == 1:
+            initial_load_time = input_load_time + dram_read_cycle
+            iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1 * split_k
+            # print(time_one_iter_w,iter_over_weight_time)
+            iter_over_input_time = (n1 - 1) * time_one_iter_in
+            iter_over_splitk_time = n1 * (split_k - 1) * time_one_iter_k
+            last_iter_time = time_one_noc_pipe_flow
+            if iter_over_weight_time + iter_over_input_time + last_iter_time + iter_over_splitk_time >= total_cp_latency:
+                latency = initial_load_time + iter_over_weight_time + iter_over_input_time + iter_over_splitk_time + last_iter_time + dram_store_per
+            else:
+                latency = initial_load_time + total_cp_latency + dram_store_per
         # print(initial_load_time,iter_over_weight_time,iter_over_input_time,last_iter_time,dram_store_per)
+        # print(iter_over_weight_time,iter_over_splitk_time,iter_over_input_time)
+        # print(n1,n2)
+
         
         Utilization = total_cp_latency / latency
         
@@ -290,6 +337,9 @@ class Tx8:
         local_last = 1
         local_next = 0
         len_cp = len(cp)
+        
+
+        split_k = 1
 
         DDR_time = 0.001 * self.config["DRAM_LATENCY(us)"]
         
@@ -338,6 +388,8 @@ class Tx8:
         else:
             time_one_iter_in = input_load_time + cm_latency_per
         
+        partial_sum_load_time = dram_store_cycle
+        time_one_iter_k = max(input_load_time + partial_sum_load_time, time_one_noc_pipe_flow)
         
         ##内层循环n2
         n2 = int(math.ceil(w_params[1]/self.config["TILE_NUM"]))
@@ -370,27 +422,28 @@ class Tx8:
         Each_cp_latency = [0 for _ in range(len_cp)]#每一个算子的总计算时间
         total_cp_latency = 0#总计算时间
         for i in range(len_cp):
-            Each_cp_latency[i] = n1 * cp_latency_cycle_in[i]
+            Each_cp_latency[i] = n1 * cp_latency_cycle_in[i] * split_k
             total_cp_latency = total_cp_latency + Each_cp_latency[i]
             
-        total_cm_latency = n1 * cm_latency_cycle_in#总通信时间
+        total_cm_latency = n1 * cm_latency_cycle_in * split_k#总通信时间
             
         Each_dram_read = [0 for _ in range(len_cp)]#每个算子的DRAM读取时间
         total_dram_read = 0#总DRAM读取时间
         for i in range(len_cp):
-            Each_dram_read[i] = n1 * dram_read_cycle_in[i]
+            Each_dram_read[i] = n1 * dram_read_cycle_in[i] * split_k
             total_dram_read = total_dram_read + Each_dram_read[i]
             
-        total_dram_store = n1 * dram_store_cycle_in#总DRAM存储时间
+        total_dram_store = n1 * dram_store_cycle_in * split_k#总DRAM存储时间
         
-        total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time
+        total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time * split_k
         
         initial_load_time = input_load_time + dram_read_cycle[1]
-        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1
+        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1 * split_k
         iter_over_input_time = (n1 - 1) * time_one_iter_in
+        iter_over_splitk_time = n1 * (split_k - 1) * time_one_iter_k
         last_iter_time = time_one_noc_pipe_flow
-        if iter_over_weight_time + iter_over_input_time + last_iter_time >= total_cp_latency:
-            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
+        if iter_over_weight_time + iter_over_input_time + last_iter_time + iter_over_splitk_time >= total_cp_latency:
+            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + iter_over_splitk_time +last_iter_time + dram_store_per
         else:
             latency = initial_load_time + total_cp_latency + dram_store_per
         # latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
@@ -407,6 +460,8 @@ class Tx8:
         
         if i_params[1] > w_params[1]:#权重驻留的情况
             self.swap_values(i_params, w_params)
+
+        split_k = 1
         
         DDR_time = 0.001 * self.config["DRAM_LATENCY(us)"]
         
@@ -452,6 +507,8 @@ class Tx8:
         else:
             time_one_iter_in = input_load_time + cm_latency_per
         
+        partial_sum_load_time = dram_store_cycle
+        time_one_iter_k = max(input_load_time + partial_sum_load_time, time_one_noc_pipe_flow)
         
         ##内层循环n2
         n2 = int(math.ceil(w_params[1]/self.config["TILE_NUM"]))
@@ -482,29 +539,30 @@ class Tx8:
         Each_cp_latency = [0 for _ in range(len_cp)]#每一个算子的总计算时间
         total_cp_latency = 0#总计算时间
         for i in range(len_cp):
-            Each_cp_latency[i] = n1 * cp_latency_cycle_in[i]
+            Each_cp_latency[i] = n1 * cp_latency_cycle_in[i] * split_k
             total_cp_latency = total_cp_latency + Each_cp_latency[i]
         # print(Each_cp_latency)
             
-        total_cm_latency = n1 * cm_latency_cycle_in#总通信时间
+        total_cm_latency = n1 * cm_latency_cycle_in * split_k#总通信时间
             
         Each_dram_read = [0 for _ in range(len_cp)]#每个算子的DRAM读取时间
         total_dram_read = 0#总DRAM读取时间
         for i in range(len_cp):
-            Each_dram_read[i] = n1 * dram_read_cycle_in[i]
+            Each_dram_read[i] = n1 * dram_read_cycle_in[i] * split_k 
             total_dram_read = total_dram_read + Each_dram_read[i]
             
-        total_dram_store = n1 * dram_store_cycle_in#总DRAM存储时间
+        total_dram_store = n1 * dram_store_cycle_in * split_k#总DRAM存储时间
         
-        total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time
+        total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time * split_k
         
         initial_load_time = input_load_time + dram_read_cycle[0]
-        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1
+        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1 * split_k
         iter_over_input_time = (n1 - 1) * time_one_iter_in
+        iter_over_splitk_time = n1 * (split_k - 1) * time_one_iter_k
         last_iter_time = time_one_noc_pipe_flow
-        
-        if iter_over_weight_time + iter_over_input_time + last_iter_time >= total_cp_latency:
-            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
+
+        if iter_over_weight_time + iter_over_input_time + last_iter_time + iter_over_splitk_time >= total_cp_latency:
+            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + iter_over_splitk_time + last_iter_time + dram_store_per
         else:
             latency = initial_load_time + total_cp_latency + dram_store_per
         # latency = initial_load_time + iter_over_weight_time + iter_over_input_time + last_iter_time + dram_store_per
@@ -549,7 +607,7 @@ class Tx8:
             else:
                 w_cm_flag = self.config["TILE_NUM"] - 1
             cp_latency_cycle[i] = (w_cm_flag + 1) * cp_latency_per[i]#每一轮的计算时间
-            #print(cp_latency_cycle[i])
+            # print(cp_latency_cycle[i])
             
         w_cm_flag = self.config["TILE_NUM"] - 1
         cm_latency_cycle = w_cm_flag * cm_latency_per#每一轮的通信时间；len_cp不为1时也只有一个算子（GEMM）进行通信
@@ -708,6 +766,27 @@ class Tx8:
 if __name__ == "__main__":
     tx8_config = load_config("./hardware_parameter.json")
     arch = Tx8(tx8_config)
+    
+    # # 使用Projection模块第一个GEMM算子验证其结果是否正确
+    # print("GEMM算子验证(tile_m = 256, tile_n = 32, split_k = 1):")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([2,16,1], [0.015625,2048],[0.25,128,1], [[0.0625,1]], 0.25, 0, 5)
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # print("总通信时间:", total_cm_latency)
+    # print("总访存时间:", total_DRAM)
+    # print("总延迟:", latency)
+    # print("利用率:", Utilization)
+    
+    # # 使用Projection模块第一个GEMM算子验证其结果是否正确
+    # print("GEMM算子验证(tile_m = 256, tile_n = 32, split_k = 2):")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([1,16,2], [0.015625,2048],[0.125,128,2], [[0.03125,1]], 0.125, 0, 5)
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # print("总通信时间:", total_cm_latency)
+    # print("总访存时间:", total_DRAM)
+    # print("总延迟:", latency)
+    # print("利用率:", Utilization)
+    
     
     
     # #FFN检验
