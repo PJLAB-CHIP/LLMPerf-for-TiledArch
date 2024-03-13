@@ -51,8 +51,8 @@ def gemm_auto_opt_mapper(op,arch,TmTnTk=None,fusion_op1=None,fusion_op2=None,det
                     if fusion_op1!=None:
                         i_size+=MBytes(fusion_op1['wshape'])/nm/nk
                         cp.append([fusion_op1['compute']/nm/nk,0])
-                    i_params=[i_size,nm,nk]
-                    w_params=[w_size,nn,nk]
+                    i_params=[i_size,nm,1]#[i_size,nm,nk]
+                    w_params=[w_size,nn,1]#[w_size,nn,nk]
                     cp.append([op['compute']/nm/nn/nk,1])
                     #t=op['compute']/nm/nn
                     #print(nm,nn)
