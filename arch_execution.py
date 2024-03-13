@@ -312,17 +312,17 @@ class Tx8:
         
         total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time * split_k
         
-
-        initial_load_time = input_load_time + dram_read_cycle
-        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1 * split_k
-        # print(time_one_iter_w,iter_over_weight_time)
-        iter_over_input_time = (n1 - 1) * time_one_iter_in
-        iter_over_splitk_time = n1 * (split_k - 1) * time_one_iter_k
-        last_iter_time = time_one_noc_pipe_flow
-        if iter_over_weight_time + iter_over_input_time + last_iter_time + iter_over_splitk_time >= total_cp_latency:
-            latency = initial_load_time + iter_over_weight_time + iter_over_input_time + iter_over_splitk_time + last_iter_time + dram_store_per
-        else:
-            latency = initial_load_time + total_cp_latency + dram_store_per
+        if split_k == 1:
+            initial_load_time = input_load_time + dram_read_cycle
+            iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1 * split_k
+            # print(time_one_iter_w,iter_over_weight_time)
+            iter_over_input_time = (n1 - 1) * time_one_iter_in
+            iter_over_splitk_time = n1 * (split_k - 1) * time_one_iter_k
+            last_iter_time = time_one_noc_pipe_flow
+            if iter_over_weight_time + iter_over_input_time + last_iter_time + iter_over_splitk_time >= total_cp_latency:
+                latency = initial_load_time + iter_over_weight_time + iter_over_input_time + iter_over_splitk_time + last_iter_time + dram_store_per
+            else:
+                latency = initial_load_time + total_cp_latency + dram_store_per
         # print(initial_load_time,iter_over_weight_time,iter_over_input_time,last_iter_time,dram_store_per)
         # print(iter_over_weight_time,iter_over_splitk_time,iter_over_input_time)
         # print(n1,n2)
