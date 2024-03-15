@@ -455,12 +455,12 @@ class Tx8:
             Each_dram_read[i] = n1 * dram_read_cycle_in[i] * split_k
             total_dram_read = total_dram_read + Each_dram_read[i]
             
-        total_dram_store = n1 * dram_store_cycle_in#总DRAM存储时间
+        total_dram_store = n1 * dram_store_cycle_in * split_k#总DRAM存储时间
         
         total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time * split_k
         
         initial_load_time = input_load_time + dram_read_cycle[1]
-        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1
+        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1 * split_k
         iter_over_input_time = (n1 - 1) * time_one_iter_in
 
         iter_over_in_psum = (n1 - 1) * (split_k - 1) * time_one_iter_in_psum
@@ -590,13 +590,13 @@ class Tx8:
             total_dram_read = total_dram_read + Each_dram_read[i]
         # print(Each_dram_read)
             
-        total_dram_store = n1 * dram_store_cycle_in#总DRAM存储时间
+        total_dram_store = n1 * dram_store_cycle_in * split_k#总DRAM存储时间
         
         total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time * split_k
         # print(total_dram_read,total_dram_store,input_load_time,n1*input_load_time)
         
         initial_load_time = input_load_time + dram_read_cycle[0]
-        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1
+        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1 * split_k
         iter_over_input_time = (n1 - 1) * time_one_iter_in
 
         iter_over_in_psum = (n1 - 1) * (split_k - 1) * time_one_iter_in_psum
@@ -834,6 +834,27 @@ if __name__ == "__main__":
     # # 使用Projection模块第一个GEMM算子验证其结果是否正确
     # print("GEMM算子验证(tile_m = 256, tile_n = 32, split_k = 2):")
     # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([1,16,2], [0.015625,2048],[0.125,128,2], [[0.03125,1]], 0.125, 0, 5,False)
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # print("总通信时间:", total_cm_latency)
+    # print("总访存时间:", total_DRAM)
+    # print("总延迟:", latency)
+    # print("利用率:", Utilization)
+    
+    
+    # # 使用Projection模块第一个GEMM算子验证其结果是否正确
+    # print("GEMM算子验证(tile_m = 256, tile_n = 32, split_k = 1):")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([2,16,1], [0.015625,2048],[0.25,128,1], [[0.0625,1]], 0.25, 0, 5)
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # print("总通信时间:", total_cm_latency)
+    # print("总访存时间:", total_DRAM)
+    # print("总延迟:", latency)
+    # print("利用率:", Utilization)
+    
+    # # 使用Projection模块第一个GEMM算子验证其结果是否正确
+    # print("GEMM算子验证(tile_m = 256, tile_n = 32, split_k = 2):")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([1,16,2], [0.015625,2048],[0.125,128,2], [[0.03125,1]], 0.125, 0, 5)
     # print("是否满足SRAM要求:", verification_result)
     # print("总计算时间:", total_cp_latency)
     # print("总通信时间:", total_cm_latency)
