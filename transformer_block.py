@@ -66,9 +66,9 @@ class Llama_block():
         #unit = 1024 * 1024 * 1024
         # 1. RMSNorm phase
         # (batch_size, row, col)
-        RMSNorm_input_shape = [self.config["B"], self.config["S"], self.config["H"]]
-        RMSNorm_weight_shape = [1, self.config["H"]]
-        RMSNorm_output_shape = RMSNorm_input_shape
+        RMSNorm_input_shape = [self.config["B"], self.config["S"], self.config["D_QKV"]]
+        RMSNorm_weight_shape = [1, self.config["D_QKV"]]
+        RMSNorm_output_shape = [self.config["B"], self.config["S"],self.config["D_QKV"]]
         # compute(GFLOPS) = 4*batch_size*input_row*input_col/1024/1024/1024
         RMSNorm_compute = 4 * RMSNorm_input_shape[0] * RMSNorm_input_shape[1] * RMSNorm_input_shape[2] / unit
         self.ops["RMSNorm"] = {"name":"RMSNorm", "type": "Vector", "ishape":RMSNorm_input_shape, "wshape": RMSNorm_weight_shape, "oshape":RMSNorm_output_shape, "compute":RMSNorm_compute}
@@ -76,7 +76,7 @@ class Llama_block():
         # 2. Q_proj phase
         Proj_input_shape = deepcopy(RMSNorm_output_shape)
         # weight_shape: (hidd_size, hidd_size)
-        Proj_weight_shape = [self.config["H"], self.config["H"]]
+        Proj_weight_shape = [self.config["D_QKV"], self.config["H_QKV"]]
         Proj_output_shape = [Proj_input_shape[0], Proj_input_shape[1], Proj_weight_shape[1]]
         Proj_compute = 2*Proj_input_shape[0]*Proj_input_shape[1]*Proj_weight_shape[0]*Proj_weight_shape[1]/unit
         self.ops["Q_proj"] = {"name":"Q_proj","type": "GEMM", "ishape":Proj_input_shape, "wshape": Proj_weight_shape, "oshape":Proj_output_shape, "compute":Proj_compute}
@@ -87,9 +87,9 @@ class Llama_block():
         self.ops["V_proj"] = {"name":"V_proj", "type": "GEMM", "ishape": Proj_input_shape, "wshape": Proj_weight_shape, "oshape": Proj_output_shape, "compute": Proj_compute}
 
         # 5. RoPE(Q) only for each head
-        RoPE_input_shape = deepcopy(Proj_output_shape)
+        RoPE_input_shape = [self.config["B"], self.config["S"], self.config["H_A"]]
         # split col into each head
-        RoPE_input_shape[2] = int(RoPE_input_shape[2]/self.config["A"])
+        RoPE_input_shape[2] = int(RoPE_input_shape[2]/self.config["N_A"])
         RoPE_weight_shape = [2*RoPE_input_shape[1], RoPE_input_shape[2]]
         RoPE_output_shape = RoPE_input_shape
         RoPE_compute = 3*RoPE_input_shape[0]*RoPE_input_shape[1]*RoPE_input_shape[2]/unit
@@ -110,13 +110,13 @@ class Llama_block():
         self.ops["Softmax"] = {"name":"Softmax", "type": "Vector", "ishape": Softmax_input_shape, "wshape": Softmax_weight_shape, "oshape": Softmax_output_shape, "compute": Softmax_compute}
         # 9. AV
         AV_input_shape = deepcopy(Softmax_output_shape)
-        AV_weight_shape = [Proj_output_shape[1], int(Proj_output_shape[2]/self.config['A'])]
+        AV_weight_shape = [Proj_output_shape[1], int(Proj_output_shape[2]/self.config['N_A'])]
         AV_output_shape = [AV_input_shape[0], AV_input_shape[1], AV_weight_shape[1]]
         AV_compute = 2*AV_input_shape[0]*AV_input_shape[1]*AV_weight_shape[0]*AV_weight_shape[1]/unit
         self.ops["AV"] = {"name":"AV", "type": "GEMM", "ishape":AV_input_shape, "wshape": AV_weight_shape, "oshape": AV_output_shape, "compute": AV_compute}
-        # 10. Linear
-        Linear_input_shape = [self.config['B'], self.config["S"], self.config["S"]]
-        Linear_weight_shape = [self.config["S"], self.config["S"]]
+        # 10. Linear 
+        Linear_input_shape = [self.config['B'], self.config["S"], self.config["D_O"]]
+        Linear_weight_shape = [self.config["D_O"], self.config["H_O"]]
         Linear_output_shape = Linear_input_shape
         Linear_compute = 2*Linear_input_shape[0]*Linear_input_shape[1]*Linear_weight_shape[0]*Linear_weight_shape[1]/unit
         self.ops["Linear"] = {"name":"Linear", "type": "GEMM", "ishape": Linear_input_shape, "wshape": Linear_weight_shape, "oshape": Linear_output_shape, "compute": Linear_compute}
@@ -129,8 +129,8 @@ class Llama_block():
         # 12. RMSNorm
         self.ops["RMSNorm2"] = {"name":"RMSNorm2", "type": "Vector", "ishape":RMSNorm_input_shape, "wshape": RMSNorm_weight_shape, "oshape":RMSNorm_output_shape, "compute":RMSNorm_compute}
         # 13. FFNup
-        FFNup_input_shape = deepcopy(RMSNorm_output_shape)
-        FFNup_weight_shape = [self.config['H'], self.config["H'"]]
+        FFNup_input_shape = [self.config["B"], self.config["S"], self.config["D_FU"]]
+        FFNup_weight_shape = [self.config['D_FU'], self.config["H_FU"]]
 
         FFNup_output_shape = [FFNup_input_shape[0], FFNup_input_shape[1], FFNup_weight_shape[1]]
         FFNup_compute = 2*FFNup_input_shape[0]*FFNup_input_shape[1]*FFNup_weight_shape[0]*FFNup_weight_shape[1]/unit
@@ -151,7 +151,7 @@ class Llama_block():
         self.ops["Hadamard"] = {"name":"Hadamard", "type": "Vector", "ishape": Hadamard_input_shape, "wshape": Hadamard_weight_shape, "oshape": Hadamard_output_shape, "compute": Hadamard_compute}
         # 17. FFNdown
         FFNdown_input_shape = deepcopy(Hadamard_output_shape)
-        FFNdown_weight_shape = [self.config["H'"], self.config["H"]]
+        FFNdown_weight_shape = [self.config["D_FD"], self.config["H_FD"]]
         FFNdown_output_shape = [FFNdown_input_shape[0], FFNdown_input_shape[1], FFNdown_weight_shape[1]]
         FFNdown_compute = 2*FFNdown_input_shape[0]*FFNdown_input_shape[1]*FFNdown_weight_shape[0]*FFNdown_weight_shape[1]/unit
         self.ops["FFNdown"] = {"name":"FFNdown", "type": "GEMM", "ishape":FFNdown_input_shape, "wshape": FFNdown_weight_shape, "oshape": FFNdown_output_shape, "compute": FFNdown_compute}
