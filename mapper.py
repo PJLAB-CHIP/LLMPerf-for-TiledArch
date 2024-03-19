@@ -93,7 +93,8 @@ def flashatten_mapper(model, arch, Tx_Ty=None, details=True, Head_fused=True):
     dims = [config['B'], config['S'], int( config['H_A']/config['N_A']), config['N_A']]
     tile_num = 16
     gemm_size = 64
-    dims=[dims[0]]+dim_norm(dims[1:],tile_num=tile_num*gemm_size)
+    dims=[dims[0]]+dim_norm([dims[1]],tile_num=tile_num*gemm_size)+dims[2:]
+    print(dims)
     # print("config['A']",config['A'])
     Tx = block_range(dims[1], min_block=1, max_block=dims[1]//arch.config['TILE_NUM'])
     Ty = block_range(dims[1], min_block=1,max_block=dims[1]//arch.config['TILE_NUM'])
