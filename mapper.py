@@ -23,6 +23,7 @@ def gemm_auto_opt_mapper(op,arch,TmTn=None,Tk=-1,fusion_op1=None,fusion_op2=None
     best_cp_latency=0
     best_stationary=None
     total_cp_latency = 0
+    gemm_size = 64 # hardware support gemm of size 64
     for stationary in ['input','weight']:
         if stationary=='input':
             dims=op['ishape']+[op['wshape'][-1]]#[b,m,k,n]输入维度为[b,m,k] 权重维度为[k,n] 输出维度为[b,m,n]
@@ -30,7 +31,7 @@ def gemm_auto_opt_mapper(op,arch,TmTn=None,Tk=-1,fusion_op1=None,fusion_op2=None
             dims=[1,op['wshape'][1],op['wshape'][0],op['ishape'][0]*op['ishape'][1]]#[1,n,k,b*m]输入维度为[1,n,k] 权重维度为[k,b*m] 输出维度为[1,n,b*m]
             #print(dims)
         tile_num=arch.config['TILE_NUM']
-        dims=[dims[0]]+dim_norm(dims[1:],tile_num=tile_num)
+        dims=[dims[0]]+dim_norm(dims[1:],tile_num=tile_num*gemm_size)
         #print(dims)
         if TmTn!=None:
             if stationary=='input':
@@ -90,6 +91,9 @@ def flashatten_mapper(model, arch, Tx_Ty=None, details=True, Head_fused=True):
     # Head_fused 表示是否多头输入Q预加载优化
     config = model.config
     dims = [config['B'], config['S'], int( config['H_A']/config['N_A']), config['N_A']]
+    tile_num = 16
+    gemm_size = 64
+    dims=[dims[0]]+dim_norm(dims[1:],tile_num=tile_num*gemm_size)
     # print("config['A']",config['A'])
     Tx = block_range(dims[1], min_block=1, max_block=dims[1]//arch.config['TILE_NUM'])
     Ty = block_range(dims[1], min_block=1,max_block=dims[1]//arch.config['TILE_NUM'])
