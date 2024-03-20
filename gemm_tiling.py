@@ -175,10 +175,12 @@ def gemm_tiling_weight_stationary(B, M, K, N, tile_m, tile_n, print_details=True
 
 if __name__ == "__main__":
     # =============== QKV projection  ===================
-    M, K , N = 4096, 4096, 4096
+    # M, K , N = 4096, 4096, 4096
+    M, K, N = 4096, 4096, 551
     QKV = 1   # QKV = 3, if fuse q k v into one matrix
     N = N * QKV
-    B = 1
+    
+    B = 16
 
     # tile_m = 64
     # tile_n = 64
@@ -186,7 +188,7 @@ if __name__ == "__main__":
     # tile_m = 128
     # tile_n = 32
 
-    tile_m = 256
-    tile_n = 32
+    tile_m = 32
+    tile_n = 16
     utilization = gemm_tiling_input_stationary(B, M, K, N, tile_m, tile_n, print_details=True)
     print(f"QKV projection, M={M}, K={K}, N={N}, B={B}, tile_m={tile_m}, tile_n={tile_n}, stationary: input, utilization={utilization:.2f}%")

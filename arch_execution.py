@@ -47,10 +47,11 @@ class Tx8:
         # cp = [cp0, cp1]，其中cp0 = [cp_size0, cp_type0]
         #print(cp)
         
-        
-        verification_result, verification_flag = self.verification(i_params, o_params, w_params, cp, details)#要求(1)是否可以计算;True or False
-        
         Mode = self.Mode(i_params, o_params, w_params, cp)#判断是哪种模式；10代表一个Vector算子，11代表一个GEMM算子，21代表先Vector后GEMM，22代表先GEMM后Vector，31代表flash-attention
+        
+        verification_result, verification_flag = self.verification(i_params, o_params, w_params, cp, Mode, details)#要求(1)是否可以计算;True or False
+        
+
         
         if Mode == 10:#一个Vector算子
             total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = self.Vector(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops, verification_flag, details)
@@ -66,7 +67,7 @@ class Tx8:
         
         return verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization
     
-    def verification(self, i_params, o_params, w_params, cp, details):
+    def verification(self, i_params, o_params, w_params, cp, Mode, details):
     # 该函数用于验证SRAM是否够用。如果切分数量小于等于16，则不需要遵循SRAM的2-3-2分配策略（2输入，3权重，2输出） 
         o_flag = o_params[1]
         cp0 = cp[0]
@@ -77,7 +78,7 @@ class Tx8:
         else:
             split_k = 1
         
-        if i_params[1] == o_flag == w_params[1]:#Vector算子情况，如RMSNorm
+        if i_params[1] == o_flag == w_params[1] and split_k == 1 and Mode == 10:#Vector算子情况，如RMSNorm
             if i_params[1] <= self.config["TILE_NUM"]:
                 if i_params[0] + w_params[0] <= self.config["SRAM(MB)"]:
                     verification_result = True
@@ -455,12 +456,12 @@ class Tx8:
             Each_dram_read[i] = n1 * dram_read_cycle_in[i] * split_k
             total_dram_read = total_dram_read + Each_dram_read[i]
             
-        total_dram_store = n1 * dram_store_cycle_in * split_k#总DRAM存储时间
+        total_dram_store = n1 * dram_store_cycle_in#总DRAM存储时间
         
         total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time * split_k
         
         initial_load_time = input_load_time + dram_read_cycle[1]
-        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1 * split_k
+        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1
         iter_over_input_time = (n1 - 1) * time_one_iter_in
 
         iter_over_in_psum = (n1 - 1) * (split_k - 1) * time_one_iter_in_psum
@@ -590,13 +591,13 @@ class Tx8:
             total_dram_read = total_dram_read + Each_dram_read[i]
         # print(Each_dram_read)
             
-        total_dram_store = n1 * dram_store_cycle_in * split_k#总DRAM存储时间
+        total_dram_store = n1 * dram_store_cycle_in#总DRAM存储时间
         
         total_DRAM = total_dram_read + total_dram_store + n1 * input_load_time * split_k
         # print(total_dram_read,total_dram_store,input_load_time,n1*input_load_time)
         
         initial_load_time = input_load_time + dram_read_cycle[0]
-        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1 * split_k
+        iter_over_weight_time = (n2 - 1) * time_one_iter_w * n1
         iter_over_input_time = (n1 - 1) * time_one_iter_in
 
         iter_over_in_psum = (n1 - 1) * (split_k - 1) * time_one_iter_in_psum
@@ -701,7 +702,7 @@ class Tx8:
         for i in range(len_cp):
             Each_cp_latency[i] = n1 * cp_latency_cycle_in[i]
             total_cp_latency = total_cp_latency + Each_cp_latency[i]
-            # print(Each_cp_latency[i])
+            # print(Each_cp_latency[i],n1)
             
         total_cm_latency = n1 * cm_latency_cycle_in#总通信时间
             
@@ -811,6 +812,16 @@ if __name__ == "__main__":
     tx8_config = load_config("./hardware_parameter.json")
     arch = Tx8(tx8_config)
 
+    #使用Projection模块第一个RMSNorm算子验证其结果是否正确
+    print("GEMM:")
+    verification_result_0, total_cp_latency_0, total_cm_latency_0, total_DRAM_0, latency_0, Utilization_0 = arch.execute([0.5, 1, 64], [96.0, 1], [1.5, 1, 64], [[6.442450944, 1]], 1.5, 0, 5, False)
+    print("是否满足SRAM要求:", verification_result_0)
+    print("总计算时间:", total_cp_latency_0)
+    print("总通信时间:", total_cm_latency_0)
+    print("总访存时间:", total_DRAM_0)
+    print("总延迟:", latency_0)
+    print("利用率:", Utilization_0)
+
     # #使用Projection模块第一个RMSNorm算子验证其结果是否正确
     # print("Projection的RMSNorm算子验证(后续不复用):")
     # verification_result_0, total_cp_latency_0, total_cm_latency_0, total_DRAM_0, latency_0, Utilization_0 = arch.execute([2,16,1], [2,16,1],[0.00048828,16], [[0.00390625,0]], 0, 0,  0,False)
@@ -842,27 +853,6 @@ if __name__ == "__main__":
     # print("利用率:", Utilization)
     
     
-    # # 使用Projection模块第一个GEMM算子验证其结果是否正确
-    # print("GEMM算子验证(tile_m = 256, tile_n = 32, split_k = 1):")
-    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([2,16,1], [0.015625,2048],[0.25,128,1], [[0.0625,1]], 0.25, 0, 5)
-    # print("是否满足SRAM要求:", verification_result)
-    # print("总计算时间:", total_cp_latency)
-    # print("总通信时间:", total_cm_latency)
-    # print("总访存时间:", total_DRAM)
-    # print("总延迟:", latency)
-    # print("利用率:", Utilization)
-    
-    # # 使用Projection模块第一个GEMM算子验证其结果是否正确
-    # print("GEMM算子验证(tile_m = 256, tile_n = 32, split_k = 2):")
-    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([1,16,2], [0.015625,2048],[0.125,128,2], [[0.03125,1]], 0.125, 0, 5)
-    # print("是否满足SRAM要求:", verification_result)
-    # print("总计算时间:", total_cp_latency)
-    # print("总通信时间:", total_cm_latency)
-    # print("总访存时间:", total_DRAM)
-    # print("总延迟:", latency)
-    # print("利用率:", Utilization)
-    
-    
     
     # #FFN检验
     # print("FFN检验(2.885681152):")
@@ -874,35 +864,35 @@ if __name__ == "__main__":
     # print("总延迟:", latency)
     # print("利用率:", Utilization)
     
-    #FFN与SiLU融合检验
-    print("FFN与SiLU融合检验:")
-    verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.0625, 512,1], [0.000244140625, 352256], [0.125, 688,1], [[0.001048576, 1], [5.12e-07, 0]], 0.125, 0, 5,False)
-    print("是否满足SRAM要求:", verification_result)
-    print("总计算时间:", total_cp_latency)
-    print("总通信时间:", total_cm_latency)
-    print("总访存时间:", total_DRAM)
-    print("总延迟:", latency)
-    print("利用率:", Utilization)
+    # #FFN与SiLU融合检验
+    # print("FFN与SiLU融合检验:")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.0625, 512,1], [0.000244140625, 352256], [0.125, 688,1], [[0.001048576, 1], [5.12e-07, 0]], 0.125, 0, 5,False)
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # print("总通信时间:", total_cm_latency)
+    # print("总访存时间:", total_DRAM)
+    # print("总延迟:", latency)
+    # print("利用率:", Utilization)
 
-    #FFN与SiLU融合检验
-    print("FFN与SiLU融合检验:")
-    verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.009765625, 16, 4096], [0.341796875, 256], [6.67572021484375e-05, 16, 4096], [[0.00035264, 1], [0.00070528, 0]], 6.67572021484375e-05, 0, 5, False)
-    print("是否满足SRAM要求:", verification_result)
-    print("总计算时间:", total_cp_latency)
-    print("总通信时间:", total_cm_latency)
-    print("总访存时间:", total_DRAM)
-    print("总延迟:", latency)
-    print("利用率:", Utilization)
+    # #FFN与SiLU融合检验
+    # print("FFN与SiLU融合检验:")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.009765625, 16, 4096], [0.341796875, 256], [6.67572021484375e-05, 16, 4096], [[0.00035264, 1], [0.00070528, 0]], 6.67572021484375e-05, 0, 5, False)
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # print("总通信时间:", total_cm_latency)
+    # print("总访存时间:", total_DRAM)
+    # print("总延迟:", latency)
+    # print("利用率:", Utilization)
     
-    #单FFN检验
-    print("单FFN检验:")
-    verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.0625, 512,1], [0.000244140625, 352256], [0.125, 688,1], [[0.001048576, 1]], 0.125, 0, 5,False)
-    print("是否满足SRAM要求:", verification_result)
-    print("总计算时间:", total_cp_latency)
-    print("总通信时间:", total_cm_latency)
-    print("总访存时间:", total_DRAM)
-    print("总延迟:", latency)
-    print("利用率:", Utilization)
+    # #单FFN检验
+    # print("单FFN检验:")
+    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.0625, 512,1], [0.000244140625, 352256], [0.125, 688,1], [[0.001048576, 1]], 0.125, 0, 5,False)
+    # print("是否满足SRAM要求:", verification_result)
+    # print("总计算时间:", total_cp_latency)
+    # print("总通信时间:", total_cm_latency)
+    # print("总访存时间:", total_DRAM)
+    # print("总延迟:", latency)
+    # print("利用率:", Utilization)
     
     # #单SiLU检验
     # print("单SiLU检验:")
@@ -1022,15 +1012,15 @@ if __name__ == "__main__":
     print("总延迟:", latency)
     print("利用率:", Utilization)
     '''
-    # # flash-attention测试
-    # print("flash-attention算子验证1:")
-    # verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.125, 16], [0.125, 16], [0.1875, 16], [[6.103515625e-05, 0], [0.03125, 1], [0.00030517578125, 0]], 0.1875, 0, 1 )
-    # print("是否满足SRAM要求:", verification_result)
-    # print("总计算时间:", total_cp_latency)
-    # print("总通信时间:", total_cm_latency)
-    # print("总访存时间:", total_DRAM)
-    # print("总延迟:", latency)
-    # print("利用率:", Utilization)
+    # flash-attention测试
+    print("flash-attention算子验证1:")
+    verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization = arch.execute([0.0625, 640], [0.03125, 640], [0.09375, 320], [[0.00065536, 0], [0.016777216, 1], [0.00032768, 0]], 0.09375, 0, 1,False)
+    print("是否满足SRAM要求:", verification_result)
+    print("总计算时间:", total_cp_latency)
+    print("总通信时间:", total_cm_latency)
+    print("总访存时间:", total_DRAM)
+    print("总延迟:", latency)
+    print("利用率:", Utilization)
     
     '''
     # flash-attention测试
