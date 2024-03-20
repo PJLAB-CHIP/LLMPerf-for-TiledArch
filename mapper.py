@@ -40,14 +40,14 @@ def gemm_auto_opt_mapper(op,arch,TmTn=None,Tk=-1,fusion_op1=None,fusion_op2=None
             else:
                 Nm,Nn=[math.ceil(dims[0]*dims[1]/TmTn[1])],[math.ceil(dims[3]/TmTn[0])]
         else:
-            Nm=block_range(dims[1],gemm_size=64*tile_num)
-            Nn=block_range(dims[3],gemm_size=64*tile_num)
+            Nm=split_range(dims[1],gemm_size=64*tile_num)
+            Nn=split_range(dims[3],gemm_size=64*tile_num)
         if Tk==None:
             Nk=[1]
         elif Tk>0:
             Nk=[math.ceil(dims[2]/Tk)]
         else:
-            Nk=block_range(dims[2],gemm_size=64)
+            Nk=split_range(dims[2],gemm_size=64)
         #print(Nk,Nm,Nn)
         for nk in Nk:
             for _nm in Nm:
@@ -100,9 +100,9 @@ def flashatten_mapper(model, arch, Tx_Ty=None, details=True, Head_fused=True):
     dims=[dims[0]]+dim_norm([dims[1]],tile_num=tile_num*gemm_size)+dims[2:]
     print(dims)
     # print("config['A']",config['A'])
-    Tx = block_range(dims[1],  max_block=dims[1]//arch.config['TILE_NUM'],gemm_size=dims[1]//gemm_size)#64X dims//Tx=gemm_size*x
-    Ty = block_range(dims[1], max_block=dims[1]//arch.config['TILE_NUM'],gemm_size=dims[1]//gemm_size)
-    print(Tx)
+    Tx = block_range(dims[1], min_block=64, max_block=dims[1]//arch.config['TILE_NUM'])
+    Ty = block_range(dims[1], min_block=64, max_block=dims[1]//arch.config['TILE_NUM'])
+    #print(Tx)
     if Tx_Ty != None:
         assert Tx_Ty[0] <= dims[1]//arch.config['TILE_NUM']
         assert Tx_Ty[1] <= dims[1]//arch.config['TILE_NUM']
@@ -161,7 +161,7 @@ def vector_mapper(op,arch,splits=None,details=False):
     if splits==None:
         if op['name'] in ['Hadamard','ResAdd','ResAdd2','SiLU']:
             i_split=i_split*op['ishape'][2]
-        splits=block_range(i_split,max_block=None, gemm_size=1)
+        splits=split_range(i_split,max_block=None, gemm_size=1)
     else:
         splits = [splits]
     max_utilization = 0
