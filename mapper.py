@@ -31,9 +31,9 @@ def gemm_auto_opt_mapper(op,arch,TmTn=None,Tk=-1,fusion_op1=None,fusion_op2=None
             dims=[1,op['wshape'][1],op['wshape'][0],op['ishape'][0]*op['ishape'][1]]#[1,n,k,b*m]输入维度为[1,n,k] 权重维度为[k,b*m] 输出维度为[1,n,b*m]
             #print(dims)
         tile_num=arch.config['TILE_NUM']
-        print('old dims',dims)
+        #print('old dims',dims)
         dims=[dims[0]]+dim_norm(dims[1:],tile_num=tile_num*gemm_size)
-        print('new dims',dims)
+        #print('new dims',dims)
         if TmTn!=None:
             if stationary=='input':
                 Nm,Nn=[math.ceil(dims[0]*dims[1]/TmTn[0])],[math.ceil(dims[3]/TmTn[1])]
@@ -48,7 +48,7 @@ def gemm_auto_opt_mapper(op,arch,TmTn=None,Tk=-1,fusion_op1=None,fusion_op2=None
             Nk=[math.ceil(dims[2]/Tk)]
         else:
             Nk=block_range(dims[2],gemm_size=64)
-        print(Nk,Nm,Nn)
+        #print(Nk,Nm,Nn)
         for nk in Nk:
             for _nm in Nm:
                 for _nn in Nn:
@@ -56,7 +56,7 @@ def gemm_auto_opt_mapper(op,arch,TmTn=None,Tk=-1,fusion_op1=None,fusion_op2=None
                     nn=_nn*tile_num
                     cur_gemm_parall=[1,nm,nk,nn]
                     cp=[]
-                    print(dims,cur_gemm_parall)
+                    #print(dims,cur_gemm_parall)
                     newdims,ishape,oshape,wshape,reduce=dim_analysis('GEMM',dims,cur_gemm_parall)
                     i_size,w_size,o_size=MBytes(ishape),MBytes(wshape),MBytes(oshape)
                     if fusion_op1!=None:
@@ -78,7 +78,7 @@ def gemm_auto_opt_mapper(op,arch,TmTn=None,Tk=-1,fusion_op1=None,fusion_op2=None
                     #print(arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops))
                     #print("total_cp_latency",total_cp_latency)
                     if tot_utilization>max_utilization and sram_cap_req:
-                        print(sram_cap_req,i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops,details)
+                        #print(sram_cap_req,i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops,details)
                         max_utilization=tot_utilization
                         best_parall=cur_gemm_parall
                         best_latency=tot_latency
@@ -95,13 +95,14 @@ def flashatten_mapper(model, arch, Tx_Ty=None, details=True, Head_fused=True):
     # Head_fused 表示是否多头输入Q预加载优化
     config = model.config
     dims = [config['B'], config['S'], config['H_A'], config['N_A']]
-    tile_num = 16
+    tile_num = arch.config['TILE_NUM']
     gemm_size = 64
     dims=[dims[0]]+dim_norm([dims[1]],tile_num=tile_num*gemm_size)+dims[2:]
     print(dims)
     # print("config['A']",config['A'])
-    Tx = block_range(dims[1],  max_block=dims[1]//arch.config['TILE_NUM'])
-    Ty = block_range(dims[1], max_block=dims[1]//arch.config['TILE_NUM'])
+    Tx = block_range(dims[1],  max_block=dims[1]//arch.config['TILE_NUM'],gemm_size=dims[1]//gemm_size)#64X dims//Tx=gemm_size*x
+    Ty = block_range(dims[1], max_block=dims[1]//arch.config['TILE_NUM'],gemm_size=dims[1]//gemm_size)
+    print(Tx)
     if Tx_Ty != None:
         assert Tx_Ty[0] <= dims[1]//arch.config['TILE_NUM']
         assert Tx_Ty[1] <= dims[1]//arch.config['TILE_NUM']
@@ -167,7 +168,7 @@ def vector_mapper(op,arch,splits=None,details=False):
     best_split = []
     best_latency =0
     total_cp_latency = 0
-    print('vector',splits)
+    #print('vector',splits)
     for split in splits:
             i_params=[MBytes(io_shape)/split,split]
             o_params=[MBytes(io_shape)/split,split]
@@ -275,4 +276,4 @@ if __name__ == "__main__":
     hardware = Tx8(tx8_config)
     print(hardware.config)
     # preset 是否使用预设切分;details是否打印映射的详细信息
-    mapping_result = manual_mapper(llama7b, hardware, preset=False, details=True)
+    mapping_result = manual_mapper(llama7b, hardware, preset=False, details=False)
