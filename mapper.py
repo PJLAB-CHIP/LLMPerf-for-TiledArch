@@ -23,6 +23,7 @@ def gemm_auto_opt_mapper(op,arch,TmTn=None,Tk=-1,fusion_op1=None,fusion_op2=None
     best_cp_latency=0
     best_stationary=None
     total_cp_latency = 0
+    gemm_size = 64 # hardware support gemm of size 64
     for stationary in ['input','weight']:
         if stationary=='input':
             dims=op['ishape']+[op['wshape'][-1]]#[b,m,k,n]输入维度为[b,m,k] 权重维度为[k,n] 输出维度为[b,m,n]
@@ -30,30 +31,33 @@ def gemm_auto_opt_mapper(op,arch,TmTn=None,Tk=-1,fusion_op1=None,fusion_op2=None
             dims=[1,op['wshape'][1],op['wshape'][0],op['ishape'][0]*op['ishape'][1]]#[1,n,k,b*m]输入维度为[1,n,k] 权重维度为[k,b*m] 输出维度为[1,n,b*m]
             #print(dims)
         tile_num=arch.config['TILE_NUM']
-        dims=[dims[0]]+dim_norm(dims[1:],tile_num=tile_num)
-        #print(dims)
+        print('old dims',dims)
+        dims=[dims[0]]+dim_norm(dims[1:],tile_num=tile_num*gemm_size)
+        print('new dims',dims)
         if TmTn!=None:
             if stationary=='input':
                 Nm,Nn=[math.ceil(dims[0]*dims[1]/TmTn[0])],[math.ceil(dims[3]/TmTn[1])]
             else:
                 Nm,Nn=[math.ceil(dims[0]*dims[1]/TmTn[1])],[math.ceil(dims[3]/TmTn[0])]
         else:
-            Nm=block_range(dims[1],min_block=tile_num)
-            Nn=block_range(dims[3],min_block=tile_num)
+            Nm=block_range(dims[1],gemm_size=64*tile_num)
+            Nn=block_range(dims[3],gemm_size=64*tile_num)
         if Tk==None:
             Nk=[1]
         elif Tk>0:
             Nk=[math.ceil(dims[2]/Tk)]
         else:
-            Nk=block_range(dims[2])
+            Nk=block_range(dims[2],gemm_size=64)
+        print(Nk,Nm,Nn)
         for nk in Nk:
-            for nm in Nm:
-                for nn in Nn:
-                    #nk=1
+            for _nm in Nm:
+                for _nn in Nn:
+                    nm=_nm*tile_num
+                    nn=_nn*tile_num
                     cur_gemm_parall=[1,nm,nk,nn]
                     cp=[]
+                    print(dims,cur_gemm_parall)
                     newdims,ishape,oshape,wshape,reduce=dim_analysis('GEMM',dims,cur_gemm_parall)
-                    #print(newshape)
                     i_size,w_size,o_size=MBytes(ishape),MBytes(wshape),MBytes(oshape)
                     if fusion_op1!=None:
                         i_size+=MBytes(fusion_op1['wshape'])/nm/nk
@@ -69,11 +73,12 @@ def gemm_auto_opt_mapper(op,arch,TmTn=None,Tk=-1,fusion_op1=None,fusion_op2=None
                     o_params=[o_size,nm*nn]
                     cm_size,cm_type,cm_hops=w_params[0],0,5
                     #print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops)
+                    #print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops,details)
                     sram_cap_req,total_cp_latency,_,_,tot_latency, tot_utilization=arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops,details)
                     #print(arch.execute( i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops))
                     #print("total_cp_latency",total_cp_latency)
                     if tot_utilization>max_utilization and sram_cap_req:
-                        #print(i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops,details)
+                        print(sram_cap_req,i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops,details)
                         max_utilization=tot_utilization
                         best_parall=cur_gemm_parall
                         best_latency=tot_latency
@@ -89,10 +94,14 @@ def flashatten_mapper(model, arch, Tx_Ty=None, details=True, Head_fused=True):
     # 外层循环次数 S/Tx,内层循环次数 S/Ty，一轮内层循环结束才输出部分和的结果S=[B,Tx,H/A,A]，而不是内层循环次数*外层循环次数
     # Head_fused 表示是否多头输入Q预加载优化
     config = model.config
-    dims = [config['B'], config['S'], int( config['H_A']/config['N_A']), config['N_A']]
+    dims = [config['B'], config['S'], config['H_A'], config['N_A']]
+    tile_num = 16
+    gemm_size = 64
+    dims=[dims[0]]+dim_norm([dims[1]],tile_num=tile_num*gemm_size)+dims[2:]
+    print(dims)
     # print("config['A']",config['A'])
-    Tx = block_range(dims[1], min_block=1, max_block=dims[1]//arch.config['TILE_NUM'])
-    Ty = block_range(dims[1], min_block=1,max_block=dims[1]//arch.config['TILE_NUM'])
+    Tx = block_range(dims[1],  max_block=dims[1]//arch.config['TILE_NUM'])
+    Ty = block_range(dims[1], max_block=dims[1]//arch.config['TILE_NUM'])
     if Tx_Ty != None:
         assert Tx_Ty[0] <= dims[1]//arch.config['TILE_NUM']
         assert Tx_Ty[1] <= dims[1]//arch.config['TILE_NUM']
@@ -105,6 +114,7 @@ def flashatten_mapper(model, arch, Tx_Ty=None, details=True, Head_fused=True):
     for tx in Tx:  # outer Q
         for ty in Ty:
             current_tx_ty = [tx, ty]
+            print(current_tx_ty)
             Q_RoPE_wsize = model.config['Q']//8*tx * model.config['H_A']//model.config['N_A']/MB
             K_RoPE_wsize = model.config['Q']//8*ty * model.config['H_A']//model.config['N_A']/MB
             if Head_fused:
@@ -150,13 +160,14 @@ def vector_mapper(op,arch,splits=None,details=False):
     if splits==None:
         if op['name'] in ['Hadamard','ResAdd','ResAdd2','SiLU']:
             i_split=i_split*op['ishape'][2]
-        splits=block_range(i_split,min_block=1)
+        splits=block_range(i_split,max_block=None, gemm_size=1)
     else:
         splits = [splits]
     max_utilization = 0
     best_split = []
     best_latency =0
     total_cp_latency = 0
+    print('vector',splits)
     for split in splits:
             i_params=[MBytes(io_shape)/split,split]
             o_params=[MBytes(io_shape)/split,split]
@@ -187,6 +198,7 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
         print('-'*40+'mapping_processing'+'-'*40)
     #1
     #mapping_result['RMSNorm']=vector_mapper(ops['RMSNorm'],arch,splits=None,details=details)
+    
     if QKV_fusion:
         mapping_result['RMSNorm']=vector_mapper(ops['RMSNorm'],arch,splits=None,details=details)
         ops["QKV_fusion"] = model.gen_gemm("QKV_fusion", [model.config["B"], model.config["S"], model.config["D_QKV"], 3*model.config["H_QKV"]])
@@ -207,6 +219,7 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
         del ops['Q_proj']
     
     # 2
+    
     Tx_Ty = [256, 256] if preset else None  # wanghuizheng
     mapping_result['Flashatten'] = flashatten_mapper(model, arch, Tx_Ty=Tx_Ty, details=details, Head_fused=True)
     del ops['RoPE(Q)']
@@ -230,6 +243,7 @@ def manual_mapper(model, arch, QKV_fusion=True, preset=True, details=True):
     TmTn = [4, 128] if preset else None
     mapping_result['FFNdown'] = gemm_auto_opt_mapper(ops['FFNdown'], arch, TmTn=TmTn, details=details)
     mapping_result['ResAdd2'] = vector_mapper(ops['ResAdd2'], arch, splits=None, details=details)
+    
     print('-'*40+'mapping_result'+'-'*40)
     tot_latency = 0
     tot_cp_latency = 0

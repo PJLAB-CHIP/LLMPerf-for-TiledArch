@@ -33,7 +33,7 @@ def MBytes(list0,bytes=2):
 
 def min_multiple_of(num,factor=16):
     return math.ceil(num/factor)*factor
-def dim_norm(dims,tile_num=16):
+def dim_norm(dims,tile_num=16*64):
     #将维度规则到tile_num的倍数
     newdims=[]
     for dim in dims:
@@ -49,24 +49,34 @@ def dim_analysis(optype,dims,para_dims):
         o_shape=[math.ceil(newdims[0]),math.ceil(newdims[1]),math.ceil(newdims[3])]
         return newdims,i_shape,o_shape,w_shape,reduce
 
-def block_range(dim,min_block=1,max_block=None):
+def block_range(dim,max_block=None, gemm_size=64*16):
     #遍历dim可以因式分解的所有公因子，满足大于等于min_block，且为min_block的倍数，且小于等于max_block
     if max_block==None:
         max_block=dim
     factors = []
+    #4096=16*64*4
     sqrt_n = int(math.sqrt(dim))
     for i in range(1, sqrt_n + 1):
-        if dim % i == 0 :
-            if i % min_block ==0 and i <= max_block:
+        if dim % i == 0 and (dim//i) % gemm_size == 0:
+            if i <= max_block:
                 factors.append(i)
-            if i != dim // i:
-                if dim // i % min_block ==0 and dim // i <= max_block:
+            if i != dim // i and i % gemm_size == 0:
+                if  dim // i <= max_block:
                     factors.append(dim // i)
     return factors
 
 if __name__ == "__main__":
+    '''
     new_dims=dim_norm([16,4096,5,511],factor=16)
     print(new_dims)
     for dim in new_dims:
         print(block_range(dim,min_block=16))
     print(dim_analysis('GEMM',new_dims,[1,128,64,256]))
+    '''
+    dims = dim_norm([32,128,4096,11008,12288],tile_num = 16*64)
+    print(dims)
+    print(block_range(dims[0]))
+    print(block_range(dims[1]))
+    print(block_range(dims[2]))
+    print(block_range(dims[3]))
+    print(block_range(dims[4]))
