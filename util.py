@@ -33,7 +33,7 @@ def MBytes(list0,bytes=2):
 
 def min_multiple_of(num,factor=16):
     return math.ceil(num/factor)*factor
-def dim_norm(dims,tile_num=16):
+def dim_norm(dims,tile_num=16*64):
     #将维度规则到tile_num的倍数
     newdims=[]
     for dim in dims:
@@ -63,8 +63,6 @@ def block_range(dim,max_block=None, gemm_size=64*16):
             if i != dim // i and i % gemm_size == 0:
                 if  dim // i <= max_block:
                     factors.append(dim // i)
-    if len(factors) == 0:
-        factors.append(1)
     return factors
 
 if __name__ == "__main__":
@@ -75,7 +73,10 @@ if __name__ == "__main__":
         print(block_range(dim,min_block=16))
     print(dim_analysis('GEMM',new_dims,[1,128,64,256]))
     '''
-    dims = dim_norm([38874, 4096])
+    dims = dim_norm([32,128,4096,11008,12288],tile_num = 16*64)
     print(dims)
     print(block_range(dims[0]))
     print(block_range(dims[1]))
+    print(block_range(dims[2]))
+    print(block_range(dims[3]))
+    print(block_range(dims[4]))
