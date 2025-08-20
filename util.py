@@ -22,14 +22,14 @@ def save_file(data, file_path):
     df = pd.DataFrame(data)
     # 将DataFrame保存到Excel中，index参数用于指定是否包含行索引
     df.to_excel(file_path, index=False)
-def MBytes(list0,bytes=2):
-    if list0==None or list0==0:
-        return 0
-    #List 维度乘积
-    res=1 
-    for i in list0:
-        res*=i
-    return res/1024/1024*bytes
+# def MBytes(list0,bytes=2):
+#     if list0==None or list0==0:
+#         return 0
+#     #List 维度乘积
+#     res=1 
+#     for i in list0:
+#         res*=i
+#     return res/1024/1024*bytes
 
 def MBytes(dims, bytes_per_element=2):
     """Calculates the size of a multi-dimensional array in MB.
@@ -118,6 +118,22 @@ def dim_analysis(optype, dims, para_dims):
             newdims[1], newdims[3]], \
             reduce
 
+def split_range(dim,max_block=None, gemm_size=64*16):
+    #遍历dim可以因式分解的所有公因子，满足大于等于min_block，且为min_block的倍数，且小于等于max_block
+    if max_block==None:
+        max_block=dim
+    factors = []
+    #4096=16*64*4
+    sqrt_n = int(math.sqrt(dim))
+    for i in range(1, sqrt_n + 1):
+        if dim % i == 0 and (dim//i) % gemm_size == 0:
+            if i <= max_block:
+                factors.append(i)
+            if i != dim // i and i % gemm_size == 0:
+                if  dim // i <= max_block:
+                    factors.append(dim // i)
+    return factors
+
 # def block_range(dim,min_block=1,max_block=None):
 #     #遍历dim可以因式分解的所有公因子，满足大于等于min_block，且为min_block的倍数，且小于等于max_block
 #     if max_block==None:
@@ -149,21 +165,6 @@ def block_range(dim, min_block=1, max_block=None):
     elif max_block == 0:
         max_block = 1
 
-    factors = []
-    #4096=16*64*4
-    sqrt_n = int(math.sqrt(dim))
-    for i in range(1, sqrt_n + 1):
-        if dim % i == 0 and (dim//i) % gemm_size == 0:
-            if i <= max_block:
-                factors.append(i)
-            if i != dim // i and i % gemm_size == 0:
-                if  dim // i <= max_block:
-                    factors.append(dim // i)
-    return factors
-def block_range(dim,min_block=1,max_block=None):
-    #遍历dim可以因式分解的所有公因子，满足大于等于min_block，且为min_block的倍数，且小于等于max_block
-    if max_block==None:
-        max_block=dim
     factors = []
     for i in range(min_block, max_block + 1, min_block):  #Efficiently iterate through multiples of min_block
         if dim % i == 0:
