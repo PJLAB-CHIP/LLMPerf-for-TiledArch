@@ -134,12 +134,37 @@ def split_range(dim,max_block=None, gemm_size=64*16):
                     factors.append(dim // i)
     return factors
 
-def block_range(dim,min_block=1,max_block=None):
-    #遍历dim可以因式分解的所有公因子，满足大于等于min_block，且为min_block的倍数，且小于等于max_block
-    if max_block==None:
-        max_block=dim
+# def block_range(dim,min_block=1,max_block=None):
+#     #遍历dim可以因式分解的所有公因子，满足大于等于min_block，且为min_block的倍数，且小于等于max_block
+#     if max_block==None:
+#         max_block=dim
+#     factors = []
+#     sqrt_n = int(math.sqrt(dim))
+#     for i in range(1, sqrt_n + 1):  # i should > min_block
+#         if dim % i == 0 :
+#             if i % min_block ==0 and i <= max_block:
+#                 factors.append(i)
+#             if i != dim // i:
+#                 if dim // i % min_block ==0 and dim // i <= max_block:
+#                     factors.append(dim // i)
+#     return factors
+def block_range(dim, min_block=1, max_block=None):
+    """
+    Iterates through all factors of dim that are multiples of min_block and less than or equal to max_block.
+
+    Args:
+        dim: The integer to find factors of.
+        min_block: The minimum value of a factor.  Factors must be multiples of this value.
+        max_block: The maximum value of a factor. Defaults to dim.
+
+    Returns:
+        A list of factors that satisfy the conditions.  The list is sorted in ascending order.
+    """
+    if max_block is None:
+        max_block = dim
     elif max_block == 0:
         max_block = 1
+
     factors = []
     sqrt_n = int(math.sqrt(dim))
     for i in range(1, sqrt_n + 1):  # i should > min_block
