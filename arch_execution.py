@@ -18,7 +18,7 @@ def load_config(input_path):
 # gemm = parameters['Gemm']#算力为128/16TOPS，是每个Tile的算力
 # vector = parameters['Vector']#算力为1/16TFLOPS，是每个Tile的算力
 # Hops = parameters['One_Hops']#一个Hop的overlap为常数0.005us
-
+# "DRAM_LATENCY(us)": 0.1 两次读取需要的恢复间隔
 
 class Tx8:
     '''
@@ -67,7 +67,25 @@ class Tx8:
         
         return verification_result, total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization
     
-    def verification(self, i_params, o_params, w_params, cp, Mode, details):
+    def verification(self, i_params, o_params, w_params, cp, details):
+        """
+        Verifies if sufficient SRAM is available for a given operation.
+
+        This function checks if the available SRAM is sufficient to perform a computation, considering different operation types (vector or matrix) and tiling strategies.  It prioritizes maintaining multiple copies of weights in SRAM to reduce memory access overhead.
+
+        Args:
+            self: The instance of the class containing this function.  Accesses `self.config["TILE_NUM"]` and `self.config["SRAM(MB)"]` for configuration parameters.
+            i_params: A list [i_size, i_flag, split_k] representing input tensor parameters.  i_size (MB): size of one input copy; i_flag: total number of input copies; split_k: indicates if the 'K' dimension is split (relevant for matrix operations).
+            o_params: A list [o_size, o_flag] representing output tensor parameters. o_size (MB): size of one output copy; o_flag: total number of output copies.
+            w_params: A list [w_size, w_flag, split_k] representing weight tensor parameters. w_size (MB): size of one weight copy; w_flag: total number of weight copies; split_k: same as in i_params.
+            cp: A list [[cp_size0, cp_type0]] representing computation parameters. cp_size0 (GFLOPs): computational cost; cp_type0: computation type (0: vector, 1: GEMM).  The second element of cp is currently unused.
+            details: A boolean flag (default False) enabling detailed print statements (currently inactive).
+
+        Returns:
+            A tuple (verification_result, verification_flag):
+                - verification_result: A boolean indicating whether sufficient SRAM is available (True) or not (False).
+                - verification_flag: An integer flag. 0 indicates the standard SRAM allocation strategy was used; 1 indicates a relaxed strategy was used (e.g., using fewer input copies).
+        """
     # 该函数用于验证SRAM是否够用。如果切分数量小于等于16，则不需要遵循SRAM的2-3-2分配策略（2输入，3权重，2输出） 
         o_flag = o_params[1]
         cp0 = cp[0]
@@ -91,8 +109,8 @@ class Tx8:
                     verification_flag = 0
                 else:
                     if i_params[0] + 2 * w_params[0] <= self.config["SRAM(MB)"]:
-                        if details:
-                            print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 2份权重 < SRAM大小)")
+                        # if details:
+                        #     print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 2份权重 < SRAM大小)")
                         verification_flag = 1
                         verification_result = True
                     else:
@@ -114,8 +132,8 @@ class Tx8:
                             verification_flag = 0
                     else:
                         if i_params[0] + 3 * w_params[0] + 2 * o_params[0] <= self.config["SRAM(MB)"]:
-                            if details:
-                                print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 3份权重 + 2份输出 < SRAM大小)")
+                            # if details:
+                            #     print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 3份权重 + 2份输出 < SRAM大小)")
                             verification_flag = 1
                             verification_result = True
                         else:
@@ -127,8 +145,8 @@ class Tx8:
                     verification_flag = 0
                 else:
                     if i_params[0] + 3 * w_params[0] + 3 * o_params[0] <= self.config["SRAM(MB)"]:
-                        if details:
-                            print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 3份权重 + 2份输出 < SRAM大小)")
+                        # if details:
+                        #     print("SRAM上同时仅存在1份输入(满足条件: 1份输入 + 3份权重 + 2份输出 < SRAM大小)")
                         verification_flag = 1
                         verification_result = True
                     else:
@@ -144,14 +162,14 @@ class Tx8:
         len_cp = len(cp)
         
 
-        split_k = 1
+        split_k = 1  # vector 操作不会切分 k 维度
         
         #一次的计算时间、通信时间和存储时间；cp_latency_per, cm_latency_per, dram_store_per
-        cp_latency_per = self.Computation_latency(cp[0])#每一次的计算时间，单位ms
+        cp_latency_per = self.Computation_latency(cp[0])  # compute_size / TOPS
         # print(cp_latency_per)
             
-        cm_latency_per_noc, cm_latency_per_overlap = self.Communication_latency(cm_size, cm_type, cm_hops)
-        cm_latency_per = cm_latency_per_noc + 0.001 * cm_latency_per_overlap#每一次的通信时间，单位为ms
+        cm_latency_per_noc, cm_latency_per_overlap = self.Communication_latency(cm_size, cm_type, cm_hops)  # 传输时间，每一跳的时间
+        cm_latency_per = cm_latency_per_noc + 0.001 * cm_latency_per_overlap  # 每一次的通信时间，单位为ms
             
         dram_store_per = 0.001 * self.config["DRAM_LATENCY(us)"] + self.DRAM_store(i_params, o_params, w_params, local_next)#每一次DRAM存储数据的时间，单位为ms
         
@@ -160,13 +178,14 @@ class Tx8:
         #一轮的总用时latency_cycle
         w_cm_flag = 0
         
-        cp_latency_cycle = (w_cm_flag + 1) * cp_latency_per#每一轮的计算时间
-        cm_latency_cycle = w_cm_flag * cm_latency_per#每一轮的通信时间
-        dram_read_cycle = 0.001 * self.config["DRAM_LATENCY(us)"] + self.DRAM_read(i_params, w_params, local_last, cp, len_cp)#每一轮DRAM读取数据的时间,这部分只含权重
+        cp_latency_cycle = (w_cm_flag + 1) * cp_latency_per  # 每一轮的计算时间
+        cm_latency_cycle = w_cm_flag * cm_latency_per  # 每一轮的通信时间，vector 操作不会通信 
+        dram_read_cycle = 0.001 * self.config["DRAM_LATENCY(us)"] + \
+                            self.DRAM_read(i_params, w_params, local_last, cp, len_cp)  #每一轮DRAM读取数据的时间,这部分只含权重
         dram_store_cycle = (w_cm_flag + 1) * dram_store_per#每一轮DRAM存储数据的时间
             
         # 计算一次 noc片上流转的时间
-        if cp_latency_cycle < dram_read_cycle:
+        if cp_latency_cycle < dram_read_cycle:  # 计算时间 < 从DRAM读取的时间 vector操作不会读weight，这种情况不会发生
             time_one_noc_pipe_flow = cm_latency_cycle + cp_latency_per * 1
         else:
             time_one_noc_pipe_flow = cp_latency_cycle
@@ -195,7 +214,7 @@ class Tx8:
         
         
         #外层循环n1
-        n1 = int(math.ceil(i_params[1]/self.config["TILE_NUM"]))
+        n1 = int(math.ceil(i_params[1]/self.config["TILE_NUM"]))  # 切分的分数在 tile 上循环
 
         
         total_cp_latency = n1 * cp_latency_cycle_in * split_k
@@ -617,27 +636,50 @@ class Tx8:
         return total_cp_latency, total_cm_latency, total_DRAM, latency, Utilization
 
     def FlashAttention(self, i_params, o_params, w_params, cp, cm_size, cm_type, cm_hops, verification_flag, details):
+        # i_params = [MBytes([dims[0], tx, dims[2]])+Q_RoPE_wsize, head*math.ceil(dims[1]//tx)]  # #head个Embedding矩阵和Q同时载入
+        # o_params = [MBytes([dims[0], tx, dims[2]]),head*math.ceil(dims[1]//tx)]  # Question： 没有考虑mask？
+        # w_params = [2*MBytes([dims[0], ty, dims[2]]) +K_RoPE_wsize, math.ceil(dims[1]//ty)]  # K+V
+        # vector_cp_size = model.config['B']*tx*model.config['H_A']//model.config['N_A'] +  model.config['B']*ty * model.config['H_A']//model.config['N_A']  # RoPE
+        # flash_vector_cp_size =model.config['B']* 5*tx*ty  # *dims[2]
+        # cp = [[vector_cp_size/G, 0], [model.config['B']*2*2*tx*ty*dims[2]/G, 1],[flash_vector_cp_size/G, 0]]
+        # LOAD: Ebd[Br, H_A]
+        # each outter loop
+        # LOAD: K[B,Bc,#head, H_A], V[B,Bc,#head, H_A]
+        # each inner loop
+        # LOAD: Q[B,Br,#head, H_A]  NOTE: K,V are inputs, NoC comm Q, Ebd is const
+        # LOAD: l_old[Br,1], m_old[Br, 1], MASK[Br,Bc]
+        # Comp RoPE: Vector OP 2*mul+1*sub+1*add(H_A/2 for each)-->2*Br*H_A, Q&K both need
+        # Comp RMSNorm: Q&K both need. Comm Q at the same time
+        # Comp Attn Score: S_ij=Q@K.T GEMM OP: 2*Br*Bc
+        # Comp Attn Mask: Vector OP 1*add-->Br*Bc
+        # Comp local: m_ij=rowmax(S_ij) 
+        #             P_ij=exp(S_ij-m_ij) Vector OP: 1*sub+1*exp-->2*Br*Bc, 
+        #             l_ij=rowsum(P_ij) vector OP: 1*add-->Br*Bc
+        # Comp global: m_new=max(m_old, m_ij), 
+        #              l_new=exp(m_old-m_new)*l_old + exp(m_ij-l_ij)*l_ij Vector OP: 2*mul+1*add-->3*Br
+        # Dropout
+        # Comp O: O_i = diag(1/l_new)*diag
         local_last = 1
         local_next = 0
         len_cp = len(cp)
         
-        if i_params[1] > w_params[1]:#权重驻留的情况
+        if i_params[1] > w_params[1]:  # input切的份数比weight多 权重驻留的情况
             self.swap_values(i_params, w_params)
         
         DDR_time = 0.001 * self.config["DRAM_LATENCY(us)"]
-        
+        # CP[1]=Q@K.T@V 每个浮点运算次数2*tx*ty*H_A
         #一次的计算时间、通信时间和存储时间；cp_latency_per, cm_latency_per, dram_store_per
         cp_latency_per = [0 for _ in range(len_cp)]
-        for i in range(len_cp):
+        for i in range(len_cp):  # XXX: Embedding矩阵会进行 2次mul, 1次sub, 1次add(每个H_A/2)维度
             cp_latency_per[i] = self.Computation_latency(cp[i])#每一个算子每一次的计算时间,由数组表示
         # print(cp_latency_per)
-
+        # XXX: Embedding矩阵都是一样的为什么要通信
         cm_latency_per_noc, cm_latency_per_overlap = self.Communication_latency(cm_size, cm_type, cm_hops)
         cm_latency_per = cm_latency_per_noc + 0.001 * cm_latency_per_overlap#每一次的通信时间，单位为ms；len_cp不为1时也只有一个算子（GEMM）进行通信
             
         dram_store_per = DDR_time + self.DRAM_store(i_params, o_params, w_params, local_next)#每一次DRAM存储数据的时间，单位为ms
         
-
+        # XXX: 每个内循环会load in Br*1的l_i和m_i
         input_load_time = i_params[0] * self.config["TILE_NUM"] / self.config["DRAM_BW(GB/s)"] + 0.001 * self.config["DRAM_LATENCY(us)"]
 
     
@@ -731,12 +773,29 @@ class Tx8:
         # 交换 i_params 和 w_params 的值
             i_params, w_params = w_params, i_params
 
+    # def Computation_latency(self, cp_n):
+    #     if cp_n[1] == 0:
+    #         cp_latency = cp_n[0] / self.config["VECTOR(TOPS)"]#cp_type=0为Vector计算
+    #     else:
+    #         cp_latency = cp_n[0] / self.config["GEMM(TFLOPS)"]#cp_type=1为GEMM计算
+    #     return cp_latency
+
     def Computation_latency(self, cp_n):
-        if cp_n[1] == 0:
-            cp_latency = cp_n[0] / self.config["VECTOR(TOPS)"]#cp_type=0为Vector计算
-        else:
-            cp_latency = cp_n[0] / self.config["GEMM(TFLOPS)"]#cp_type=1为GEMM计算
-        return cp_latency
+        """Calculates computation latency based on operation type.
+
+        Args:
+            cp_n: A list or tuple [cp_size, cp_type] where cp_size is the computational cost (GFLOPs) and cp_type is the operation type (0: Vector, 1: GEMM).
+
+        Returns:
+                The computation latency in seconds.  Returns 0 if cp_type is invalid.
+            """
+        cp_size, cp_type = cp_n
+        latency_lookup = {
+            0: self.config["VECTOR(TOPS)"],
+            1: self.config["GEMM(TFLOPS)"],
+        }
+        performance = latency_lookup.get(cp_type, 0) #Returns 0 if cp_type is not 0 or 1.
+        return cp_size / performance if performance else 0
 
     def Mode(self, i_params, o_params, w_params, cp):
         len_cp = len(cp)
@@ -766,22 +825,22 @@ class Tx8:
     
     def DRAM_read(self, i_params, w_params, local_last, cp, len_cp):        
         #print(i_params, w_params)
-        
-        if len_cp == 1:
+        # 为每个tile读取一份被切分后的
+        if len_cp == 1:  # 单个算子只计算weight的读取时间，默认input在本地
             dram_size = i_params[0] + w_params[0]
             read_latency = (dram_size - i_params[0]) * self.config["TILE_NUM"] / self.config["DRAM_BW(GB/s)"]
 
         elif len_cp == 2:
             read_latency = [0 for _ in range(len_cp)]
-            for i in range(len_cp):
+            for i in range(len_cp):  # 两个算子
                 cpi = cp[i]
-                if cpi[1] == 0:
+                if cpi[1] == 0:  # 算子是vector类型
                     dram_size = 0
                     read_latency[i] = (dram_size * self.config["TILE_NUM"]) / self.config["DRAM_BW(GB/s)"] 
-                else:
+                else:  # 算子是GEMM类型，只用读取weight (疑问 为什么连续读两个weight需要加上DRAM_LATENCY)
                     dram_size = w_params[0]
                     read_latency[i] = (dram_size * self.config["TILE_NUM"]) / self.config["DRAM_BW(GB/s)"] + 0.001 * self.config["DRAM_LATENCY(us)"]
-        else:
+        else:  # 需要3个及以上的vector/matrix进行计算的算子
             read_latency = [0 for _ in range(len_cp)]
             for i in range(len_cp):
                 if i == 0:
@@ -797,13 +856,13 @@ class Tx8:
     
     def DRAM_store(self, i_params, o_params, w_params, local_next):
         if i_params[1] <= self.config["TILE_NUM"] and w_params[1] <= self.config["TILE_NUM"]:
-            o_flag = i_params[1]
+            o_flag = i_params[1]  # vector situation
         else:
-            o_flag = i_params[1] * w_params[1]#用于计算输出的切分次数
+            o_flag = i_params[1] * w_params[1]  # GEMM situation
         
-        if local_next == 1 and o_flag == 16: #输出复用为下一个算子的输入
+        if local_next == 1 and o_flag == 16: # 数据不用传输且刚好输出切分16份(可以均匀地分配到tile上)时，输出复用为输入
             store_latency = 0
-        else:#不复用
+        else:  # 16个tile上的SRAM存回DRAM
             store_latency = (o_params[0] * self.config["TILE_NUM"]) / self.config["DRAM_BW(GB/s)"]
         return store_latency
 
