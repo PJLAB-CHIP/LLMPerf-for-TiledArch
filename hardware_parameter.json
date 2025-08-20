@@ -1,7 +1,7 @@
 {
     "TILE_NUM": 16,
     "SRAM(MB)": 3,
-    "NOC_BW(GB/s)": 128,
+    "NOC_BW(GB/s)": 25,
     "DRAM_BW(GB/s)": 100,
     "DRAM_LATENCY(us)": 0.1,
     "GEMM(TFLOPS)": 8,
