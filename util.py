@@ -166,7 +166,6 @@ def block_range(dim,min_block=1,max_block=None):
 #         max_block = dim
 #     elif max_block == 0:
 #         max_block = 1
-
 #     factors = []
 #     for i in range(min_block, max_block + 1, min_block):  #Efficiently iterate through multiples of min_block
 #         if dim % i == 0:
