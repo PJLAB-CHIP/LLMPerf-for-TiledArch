@@ -396,7 +396,7 @@ class Llama_block():
         return {"name":name,"type": "GEMM", "ishape":ishape, "wshape": wshape, "oshape":oshape, "compute":Proj_compute}
     
     def construct_model(self):
-        ipdb.set_trace()
+        #ipdb.set_trace()
         # GFLOPS unit
         unit = 1000 * 1000 * 1000
         #unit = 1024 * 1024 * 1024
