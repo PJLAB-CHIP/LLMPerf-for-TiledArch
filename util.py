@@ -22,14 +22,14 @@ def save_file(data, file_path):
     df = pd.DataFrame(data)
     # 将DataFrame保存到Excel中，index参数用于指定是否包含行索引
     df.to_excel(file_path, index=False)
-def MBytes(list0,bytes=2):
-    if list0==None or list0==0:
-        return 0
-    #List 维度乘积
-    res=1 
-    for i in list0:
-        res*=i
-    return res/1024/1024*bytes
+# def MBytes(list0,bytes=2):
+#     if list0==None or list0==0:
+#         return 0
+#     #List 维度乘积
+#     res=1 
+#     for i in list0:
+#         res*=i
+#     return res/1024/1024*bytes
 
 def MBytes(dims, bytes_per_element=2):
     """Calculates the size of a multi-dimensional array in MB.
@@ -118,37 +118,10 @@ def dim_analysis(optype, dims, para_dims):
             newdims[1], newdims[3]], \
             reduce
 
-# def block_range(dim,min_block=1,max_block=None):
-#     #遍历dim可以因式分解的所有公因子，满足大于等于min_block，且为min_block的倍数，且小于等于max_block
-#     if max_block==None:
-#         max_block=dim
-#     factors = []
-#     sqrt_n = int(math.sqrt(dim))
-#     for i in range(1, sqrt_n + 1):  # i should > min_block
-#         if dim % i == 0 :
-#             if i % min_block ==0 and i <= max_block:
-#                 factors.append(i)
-#             if i != dim // i:
-#                 if dim // i % min_block ==0 and dim // i <= max_block:
-#                     factors.append(dim // i)
-#     return factors
-def block_range(dim, min_block=1, max_block=None):
-    """
-    Iterates through all factors of dim that are multiples of min_block and less than or equal to max_block.
-
-    Args:
-        dim: The integer to find factors of.
-        min_block: The minimum value of a factor.  Factors must be multiples of this value.
-        max_block: The maximum value of a factor. Defaults to dim.
-
-    Returns:
-        A list of factors that satisfy the conditions.  The list is sorted in ascending order.
-    """
-    if max_block is None:
-        max_block = dim
-    elif max_block == 0:
-        max_block = 1
-
+def split_range(dim,max_block=None, gemm_size=64*16):
+    #遍历dim可以因式分解的所有公因子，满足大于等于min_block，且为min_block的倍数，且小于等于max_block
+    if max_block==None:
+        max_block=dim
     factors = []
     #4096=16*64*4
     sqrt_n = int(math.sqrt(dim))
@@ -160,17 +133,47 @@ def block_range(dim, min_block=1, max_block=None):
                 if  dim // i <= max_block:
                     factors.append(dim // i)
     return factors
+
 def block_range(dim,min_block=1,max_block=None):
     #遍历dim可以因式分解的所有公因子，满足大于等于min_block，且为min_block的倍数，且小于等于max_block
     if max_block==None:
         max_block=dim
+    elif max_block == 0:
+        max_block = 1
     factors = []
-    for i in range(min_block, max_block + 1, min_block):  #Efficiently iterate through multiples of min_block
-        if dim % i == 0:
-            factors.append(i)
-
-    factors.sort() #Ensure ascending order for consistency
+    sqrt_n = int(math.sqrt(dim))
+    for i in range(1, sqrt_n + 1):  # i should > min_block
+        if dim % i == 0 :
+            if i % min_block ==0 and i <= max_block:
+                factors.append(i)
+            if i != dim // i:
+                if dim // i % min_block ==0 and dim // i <= max_block:
+                    factors.append(dim // i)
     return factors
+# def block_range(dim, min_block=1, max_block=None):
+#     """
+#     Iterates through all factors of dim that are multiples of min_block and less than or equal to max_block.
+
+#     Args:
+#         dim: The integer to find factors of.
+#         min_block: The minimum value of a factor.  Factors must be multiples of this value.
+#         max_block: The maximum value of a factor. Defaults to dim.
+
+#     Returns:
+#         A list of factors that satisfy the conditions.  The list is sorted in ascending order.
+#     """
+#     if max_block is None:
+#         max_block = dim
+#     elif max_block == 0:
+#         max_block = 1
+
+#     factors = []
+#     for i in range(min_block, max_block + 1, min_block):  #Efficiently iterate through multiples of min_block
+#         if dim % i == 0:
+#             factors.append(i)
+
+#     factors.sort() #Ensure ascending order for consistency
+#     return factors
 if __name__ == "__main__":
     '''
     new_dims=dim_norm([16,4096,5,511],factor=16)
